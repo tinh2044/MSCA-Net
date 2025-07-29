@@ -91,7 +91,6 @@ class GlossTokenizer:
             tokens = torch.tensor(_input)
 
         if skip_special_tokens:
-            # Convert special_tokens list to tensor of token IDs for proper isin() usage
             special_tokens_ids = torch.tensor(
                 [self.gloss2id[token] for token in self.special_tokens],
                 dtype=tokens.dtype,
@@ -122,10 +121,8 @@ if __name__ == "__main__":
     sentences = df["annotation"].tolist()
     print(sentences[0])
     for s in tqdm(sentences):
-        # Normalize input string by replacing multiple spaces with single space
         normalized_s = " ".join(s.split())
         output = tokenizer.encode(s, has_split=False)
         decode = tokenizer.decode(output, skip_special_tokens=True)
-        # Normalize decoded string for comparison
         normalized_decode = " ".join(decode.split())
         assert normalized_s == normalized_decode, f"{s} != {decode}"

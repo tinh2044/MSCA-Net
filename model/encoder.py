@@ -88,10 +88,7 @@ class Encoder(nn.Module):
 
         attention_mask = create_attention_mask(attention_mask, x_embed.dtype)
 
-        if return_attn_map:
-            attn_maps = []
-        else:
-            attn_maps = None
+        attn_maps = []
 
         for encoder_layer in self.layers:
             hidden_states, attn_map = encoder_layer(
@@ -100,4 +97,5 @@ class Encoder(nn.Module):
             if return_attn_map:
                 attn_maps.append(attn_map)
 
-        return hidden_states, attn_maps
+
+        return hidden_states, attn_maps[-1] if return_attn_map else None

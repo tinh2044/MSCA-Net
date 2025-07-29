@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 from model.keypoint_module import KeypointModule
-from model.alignment_module import AlignmentModule
 from model.fusion import CoordinatesFusion
 from loss import SeqKD
 import torch.nn.functional as F
@@ -24,11 +23,6 @@ class RecognitionHead(nn.Module):
             cfg["out_fusion_dim"], len(gloss_tokenizer)
         )
 
-        # self.fuse_alignment_head = AlignmentModule(
-        #     **cfg["alignment_module"], cls_num=len(gloss_tokenizer)
-        # )
-
-        # Initialize weights properly
         self._init_weights()
 
     def _init_weights(self):
@@ -48,16 +42,8 @@ class RecognitionHead(nn.Module):
     ):
         left_logits = self.left_gloss_classifier(left_output)
         right_logits = self.right_gloss_classifier(right_output)
-        # fuse_logits = self.fuse_alignment_head(fuse_output.permute(1, 0, 2))
         body_logits = self.body_gloss_classifier(body_output)
         fuse_coord_logits = self.fuse_coord_classifier(fuse_output)
-
-        # # Clamp logits to prevent extreme values
-        # left_logits = torch.clamp(left_logits, min=-50, max=50)
-        # right_logits = torch.clamp(right_logits, min=-50, max=50)
-        # fuse_logits = torch.clamp(fuse_logits, min=-50, max=50)
-        # body_logits = torch.clamp(body_logits, min=-50, max=50)
-        # fuse_coord_logits = torch.clamp(fuse_coord_logits, min=-50, max=50)
 
         outputs = {
             "alignment_gloss_logits": fuse_coord_logits,
@@ -80,7 +66,6 @@ class MSCA_Net(torch.nn.Module):
 
         self.self_distillation = cfg["self_distillation"]
 
-        # Add gradient clipping threshold
         self.gradient_clip_val = cfg.get("gradient_clip_val", 1.0)
 
         self.body_encoder = KeypointModule(
@@ -97,16 +82,12 @@ class MSCA_Net(torch.nn.Module):
         )
         self.recognition_head = RecognitionHead(cfg, gloss_tokenizer)
 
-        self.loss_fn = nn.CTCLoss(
-            reduction="none", zero_infinity=True, blank=0
-        )  # Changed to True
+        self.loss_fn = nn.CTCLoss(reduction="none", zero_infinity=True, blank=0)
         self.distillation_loss = SeqKD()
 
-        # Initialize weights
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize weights to prevent NaN/inf issues"""
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
@@ -126,21 +107,25 @@ class MSCA_Net(torch.nn.Module):
         keypoints = src_input["keypoints"]
         mask = src_input["mask"]
 
-        # Check for NaN/inf in input
         if torch.isnan(keypoints).any() or torch.isinf(keypoints).any():
             raise ValueError("NaN or inf in input keypoints")
 
-        # Get embeddings and attention maps if requested
         attention_data = {}
 
         body_embed, body_attn_maps = self.body_encoder(
-            keypoints[:, :, self.cfg["body_idx"], :], mask, return_attn_map=True
+            keypoints[:, :, self.cfg["body_idx"], :],
+            mask,
+            return_attn_map=return_attention_maps,
         )
         left_embed, left_attn_maps = self.left_encoder(
-            keypoints[:, :, self.cfg["left_idx"], :], mask, return_attn_map=True
+            keypoints[:, :, self.cfg["left_idx"], :],
+            mask,
+            return_attn_map=return_attention_maps,
         )
         right_embed, right_attn_maps = self.right_encoder(
-            keypoints[:, :, self.cfg["right_idx"], :], mask, return_attn_map=True
+            keypoints[:, :, self.cfg["right_idx"], :],
+            mask,
+            return_attn_map=return_attention_maps,
         )
 
         attention_data = {
@@ -149,7 +134,6 @@ class MSCA_Net(torch.nn.Module):
             "right_attention_data": right_attn_maps,
         }
 
-        # Check embeddings for NaN/inf
         if torch.isnan(body_embed).any() or torch.isinf(body_embed).any():
             raise ValueError("NaN or inf in body_embed")
         if torch.isnan(left_embed).any() or torch.isinf(left_embed).any():
@@ -182,12 +166,6 @@ class MSCA_Net(torch.nn.Module):
         if return_attention_maps:
             outputs["attention_data"] = attention_data
 
-        # outputs["alignment_loss"] = self.compute_loss(
-        #     labels=src_input["gloss_labels"],
-        #     tgt_lengths=src_input["gloss_lengths"],
-        #     logits=outputs["alignment_gloss_logits"],
-        #     input_lengths=outputs["input_lengths"],
-        # )
         outputs["fuse_coord_loss"] = self.compute_loss(
             labels=src_input["gloss_labels"],
             tgt_lengths=src_input["gloss_lengths"],
@@ -195,15 +173,6 @@ class MSCA_Net(torch.nn.Module):
             input_lengths=outputs["input_lengths"],
         )
 
-        # # Check for NaN/inf with more informative error messages
-        # if torch.isnan(outputs["alignment_loss"]) or torch.isinf(
-        #     outputs["alignment_loss"]
-        # ):
-        #     print(f"Alignment loss value: {outputs['alignment_loss']}")
-        #     print(
-        #         f"Alignment logits stats: min={outputs['alignment_gloss_logits'].min()}, max={outputs['alignment_gloss_logits'].max()}"
-        #     )
-        #     raise ValueError("NaN or inf in alignment_loss")
         if torch.isnan(outputs["fuse_coord_loss"]) or torch.isinf(
             outputs["fuse_coord_loss"]
         ):
@@ -233,7 +202,6 @@ class MSCA_Net(torch.nn.Module):
                     student_logits, teacher_logits, use_blank=False
                 )
 
-                # Clamp distillation loss to prevent extreme values
                 distill_loss = torch.clamp(distill_loss, min=-100, max=100)
                 outputs[f"{student}_distill_loss"] = distill_loss
 
@@ -253,24 +221,18 @@ class MSCA_Net(torch.nn.Module):
         try:
             logits = logits.permute(1, 0, 2)
 
-            # Add small epsilon to prevent log(0)
-            epsilon = 1e-8
             log_probs = F.log_softmax(logits, dim=-1)
 
-            # Ensure log_probs are stable
             log_probs = torch.clamp(log_probs, min=-100, max=0)
 
-            # Check for invalid values before CTC loss
             if torch.isnan(log_probs).any():
                 raise ValueError("NaN in log_probs")
             if torch.isinf(log_probs).any():
                 raise ValueError("inf in log_probs")
 
-            # Ensure input_lengths and tgt_lengths are valid
             input_lengths = torch.clamp(input_lengths, min=1)
             tgt_lengths = torch.clamp(tgt_lengths, min=1)
 
-            # Ensure input_lengths >= tgt_lengths for CTC
             input_lengths = torch.maximum(input_lengths, tgt_lengths)
 
             loss = self.loss_fn(
@@ -280,15 +242,11 @@ class MSCA_Net(torch.nn.Module):
                 tgt_lengths.cpu().int(),
             )
 
-            # Filter out infinite losses and take mean of valid losses
             valid_loss_mask = torch.isfinite(loss)
             if valid_loss_mask.sum() == 0:
                 return torch.tensor(0.0, device=logits.device, requires_grad=True)
 
             loss = loss[valid_loss_mask].mean()
-
-            # Clamp final loss to prevent extreme values
-            # loss = torch.clamp(loss, min=0, max=100)
 
         except Exception as e:
             print(f"Error in CTC loss: {str(e)}")

@@ -1,13 +1,8 @@
-from typing import Callable, Optional
-
 import torch
 from torch import nn
 
 from torch.optim import lr_scheduler
 from torch.optim.lr_scheduler import _LRScheduler
-
-from torch.optim import Optimizer
-
 import math
 
 

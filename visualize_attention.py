@@ -1,238 +1,242 @@
+#!/usr/bin/env python3
+"""
+Script to visualize attention maps from MSCA-Net model.
+This script extracts and saves attention maps for each sample in the dataset.
+"""
+
 import torch
+import torch.backends.cudnn as cudnn
+from torch.utils.data import DataLoader
+import os
+import argparse
+import json
+import numpy as np
+import yaml
+import random
+from pathlib import Path
 import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
-import os
-from pathlib import Path
-import yaml
-import argparse
+from tqdm import tqdm
+import shutil
+
+from Tokenizer import GlossTokenizer
+from dataset import SLR_Dataset
+from model import MSCA_Net
+import utils
 
 
-def save_attention_heatmap(
-    attention_weights, save_path, title="Attention Map", sample_idx=0
-):
+def get_args_parser():
+    parser = argparse.ArgumentParser("MSCA-Net Attention Visualization", add_help=False)
+    parser.add_argument("--batch-size", default=1, type=int, help="Batch size for visualization")
+    parser.add_argument("--cfg_path", type=str, required=True, help="Path to config file")
+    parser.add_argument("--checkpoint", type=str, required=True, help="Path to model checkpoint")
+    parser.add_argument("--output_dir", type=str, default="./attention_maps", help="Output directory for attention maps")
+    parser.add_argument("--split", type=str, default="test", choices=["train", "dev", "test"], help="Dataset split to visualize")
+    parser.add_argument("--max_samples", type=int, default=None, help="Maximum number of samples to process")
+    parser.add_argument("--device", default="cuda", help="Device to use")
+    parser.add_argument("--seed", default=42, type=int)
+    return parser
+
+
+def save_attention_map(attention_map, save_path, title="Attention Map"):
     """
-    Save attention weights as heatmap
+    Save attention map as PNG image without labels, legend, and title.
+    Different colors for different attention types.
+
     Args:
-        attention_weights: torch.Tensor of shape (batch_size, seq_len, seq_len) or (seq_len, seq_len)
-        save_path: path to save the image
-        title: title for the file naming (not displayed on plot)
-        sample_idx: which sample in batch to visualize (default: 0)
+        attention_map: Tensor of shape (T, T) - attention weights
+        save_path: Path to save the image
+        title: Title for the plot (not used, kept for compatibility)
     """
-    if attention_weights is None:
-        return
+    # Convert to numpy and ensure it's on CPU
+    if isinstance(attention_map, torch.Tensor):
+        attention_map = attention_map.detach().cpu().numpy()
 
-    # Convert to numpy and select first sample if batch
-    if len(attention_weights.shape) == 3:
-        attn_map = attention_weights[sample_idx].detach().cpu().numpy()
+    # DEBUG: Print detailed statistics
+    filename = os.path.basename(save_path)
+
+
+    attention_map = attention_map
+
+    # Normalize attention map to [0, 1] range for better visualization
+    original_min, original_max = attention_map.min(), attention_map.max()
+  
+    # Choose colormap based on attention type from filename
+    filename = os.path.basename(save_path)
+    if "self_attn_maps" in filename:
+        colormap = 'Greens'  # Xanh lá cho self attention
+    elif "causal_attn_maps" in filename:
+        colormap = 'Oranges'  # Cam cho causal attention
+    elif "cross_attn_maps" in filename:
+        colormap = 'RdPu'  # Hồng cho cross attention (Red-Purple)
     else:
-        attn_map = attention_weights.detach().cpu().numpy()
+        colormap = 'plasma'  # Default colormap
 
-    # Create clean heatmap without title, labels, or ticks
-
-    attn_map = attn_map[:32, :32]
+    # Create figure
     plt.figure(figsize=(10, 10))
+
+    # Create heatmap using seaborn with attention-specific colormap
     sns.heatmap(
-        attn_map,
-        cbar=False,
-        square=True,
-        xticklabels=False,
-        yticklabels=False,
+        attention_map,
+        cmap=colormap,  # Use colormap based on attention type
+        cbar=False,  # No colorbar
+        square=True,  # Square cells
+        xticklabels=False,  # No x labels
+        yticklabels=False,  # No y labels
+        annot=False,  # No annotations
+        fmt='.10f',
+        vmin=original_min,  # Set minimum value for consistent color scaling
+        vmax=original_max  # Set maximum value for consistent color scaling
     )
 
-    # Remove all axes, titles, and labels for clean image
-    plt.axis("off")
-    plt.gca().set_xticks([])
-    plt.gca().set_yticks([])
+    # Remove axes and labels
+    plt.axis('off')
 
-    # Ensure directory exists
+    # Save the figure
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-
-    # Save plot with no padding and high DPI
-    plt.tight_layout()
-    plt.savefig(
-        save_path,
-        dpi=300,
-        bbox_inches="tight",
-        pad_inches=0,  # Remove padding
-        facecolor="white",
-        edgecolor="none",
-    )
+    plt.savefig(save_path, dpi=300, bbox_inches='tight', pad_inches=0)
     plt.close()
 
-    print(f"Saved attention map: {save_path}")
 
-
-def save_attention_maps_for_sample(attention_data, sample_idx, sample_name, output_dir):
+def process_attention_data(attention_data, sample_names, output_dir, data_name):
     """
-    Save all attention maps for a single sample
+    Process and save attention maps for a batch of samples.
+
     Args:
-        attention_data: dict containing attention weights from different modules
-        sample_idx: index of sample in batch
-        sample_name: name/identifier for the sample
-        output_dir: base output directory
+        attention_data: Dictionary containing attention maps for all streams
+        sample_names: List of sample names in the batch
+        output_dir: Base output directory
+        data_name: Name of the dataset
     """
-    sample_dir = Path(output_dir) / f"sample_{sample_name}"
-    sample_dir.mkdir(parents=True, exist_ok=True)
+    batch_size = len(sample_names)
 
-    # Save different types of attention maps
-    for body_part in ["body", "left", "right"]:
-        if f"{body_part}_attention_data" in attention_data:
-            part_data = attention_data[f"{body_part}_attention_data"]
+    # Define the streams and attention types
+    streams = ["body_attention_data", "left_attention_data", "right_attention_data"]
+    attention_types = ["self_attn_maps", "causal_attn_maps", "cross_attn_maps"]
+    for batch_idx in range(batch_size):
+        sample_name = sample_names[batch_idx]
+        sample_dir = os.path.join(output_dir, data_name, sample_name)
 
-            # X attention maps (self attention)
-            if "self_attn_maps" in part_data and part_data["self_attn_maps"]:
-                for layer_idx, self_attn in enumerate(
-                    part_data["self_attn_maps"][0][0]
-                ):
-                    print(layer_idx, self_attn.shape)
-                    file_name = f"{body_part}_x_attention_layer_{layer_idx}_sample_{sample_name}.png"
-                    save_path = sample_dir / file_name
-                    title = f"{body_part.capitalize()} X Attention Layer {layer_idx} Sample {sample_name}"
-                    save_attention_heatmap(
-                        self_attn, save_path, title=title, sample_idx=sample_idx
-                    )
+        print(f"\nProcessing sample: {sample_name}")
 
-            # Y attention maps (causal attention)
-            if "causal_attn_maps" in part_data and part_data["causal_attn_maps"]:
-                for layer_idx, causal_attn in enumerate(
-                    part_data["causal_attn_maps"][0][0]
-                ):
-                    file_name = f"{body_part}_y_attention_layer_{layer_idx}_sample_{sample_name}.png"
-                    save_path = sample_dir / file_name
-                    title = f"{body_part.capitalize()} Y Attention Layer {layer_idx} Sample {sample_name}"
-                    save_attention_heatmap(
-                        causal_attn, save_path, title=title, sample_idx=sample_idx
-                    )
+        for stream in streams:
+            if stream not in attention_data or attention_data[stream] is None:
+                print(f"  Warning: {stream} not found in attention data")
+                continue
 
-            # Cross attention maps
-            if "cross_attn_maps" in part_data and part_data["cross_attn_maps"]:
-                for layer_idx, cross_attn in enumerate(
-                    part_data["cross_attn_maps"][0][0]
-                ):
-                    file_name = f"{body_part}_cross_attention_layer_{layer_idx}_sample_{sample_name}.png"
-                    save_path = sample_dir / file_name
-                    title = f"{body_part.capitalize()} Cross Attention Layer {layer_idx} Sample {sample_name}"
-                    save_attention_heatmap(
-                        cross_attn, save_path, title=title, sample_idx=sample_idx
-                    )
+            stream_data = attention_data[stream]
+            stream_name = stream.replace("_attention_data", "")  # body, left, right
+
+            for attn_type in attention_types:
+                if attn_type not in stream_data or stream_data[attn_type] is None:
+                    print(f"  Warning: {attn_type} not found in {stream}")
+                    continue
+
+                # Get attention map for current sample
+                attn_map = stream_data[attn_type][batch_idx]  # Shape: (T, T)
+
+                # Create filename
+                filename = f"{stream_name}_{attn_type}.png"
+                save_path = os.path.join(sample_dir, filename)
+
+                # Save attention map (no title needed)
+                save_attention_map(attn_map, save_path)
+
+                print(f"    Saved: {filename} (shape: {attn_map.shape})")
 
 
-def save_summary_attention_maps(attention_data, sample_idx, sample_name, output_dir):
-    """
-    Save averaged attention maps across layers for summary view
-    """
-    sample_dir = Path(output_dir) / f"sample_{sample_name}"
-    summary_dir = sample_dir / "summary"
-    summary_dir.mkdir(parents=True, exist_ok=True)
-
-    for body_part in ["body", "left", "right"]:
-        if f"{body_part}_attention_data" in attention_data:
-            part_data = attention_data[f"{body_part}_attention_data"]
-
-            # Average self attention across layers
-            if "self_attn_maps" in part_data and part_data["self_attn_maps"]:
-                avg_self_attn = torch.stack(part_data["self_attn_maps"]).mean(dim=0)
-                file_name = f"{body_part}_x_attention_avg_sample_{sample_name}.png"
-                save_path = summary_dir / file_name
-                title = (
-                    f"{body_part.capitalize()} X Attention Average Sample {sample_name}"
-                )
-                save_attention_heatmap(
-                    avg_self_attn, save_path, title=title, sample_idx=sample_idx
-                )
-
-            # Average causal attention across layers
-            if "causal_attn_maps" in part_data and part_data["causal_attn_maps"]:
-                avg_causal_attn = torch.stack(part_data["causal_attn_maps"]).mean(dim=0)
-                file_name = f"{body_part}_y_attention_avg_sample_{sample_name}.png"
-                save_path = summary_dir / file_name
-                title = (
-                    f"{body_part.capitalize()} Y Attention Average Sample {sample_name}"
-                )
-                save_attention_heatmap(
-                    avg_causal_attn, save_path, title=title, sample_idx=sample_idx
-                )
-
-            # Average cross attention across layers
-            if "cross_attn_maps" in part_data and part_data["cross_attn_maps"]:
-                avg_cross_attn = torch.stack(part_data["cross_attn_maps"]).mean(dim=0)
-                file_name = f"{body_part}_cross_attention_avg_sample_{sample_name}.png"
-                save_path = summary_dir / file_name
-                title = f"{body_part.capitalize()} Cross Attention Average Sample {sample_name}"
-                save_attention_heatmap(
-                    avg_cross_attn, save_path, title=title, sample_idx=sample_idx
-                )
-
-
-def process_batch_attention(attention_data, output_dir, batch_start_idx=0):
-    """
-    Process attention maps for entire batch
-    Args:
-        attention_data: dict containing attention data for the batch
-        output_dir: output directory
-        batch_start_idx: starting index for sample naming
-    """
-    # Determine batch size from the first available attention tensor
-    batch_size = None
-    for body_part in ["body", "left", "right"]:
-        if f"{body_part}_attention_data" in attention_data:
-            part_data = attention_data[f"{body_part}_attention_data"]
-            for attn_type in [
-                "self_attn_maps",
-                "causal_attn_maps",
-                "cross_attn_maps",
-            ]:
-                if attn_type in part_data and part_data[attn_type]:
-                    batch_size = part_data[attn_type][0].shape[0]
-                    break
-            if batch_size is not None:
+def main():
+    parser = get_args_parser()
+    args = parser.parse_args()
+    
+    # Load config
+    with open(args.cfg_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Set device
+    device = args.device if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+    
+    # Set seed
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+    cudnn.benchmark = False
+    
+    # Initialize tokenizer
+    gloss_tokenizer = GlossTokenizer(config["gloss_tokenizer"])
+    
+    # Load dataset
+    cfg_data = config["data"]
+    dataset = SLR_Dataset(
+        root=cfg_data["root"],
+        gloss_tokenizer=gloss_tokenizer,
+        cfg=cfg_data,
+        split=args.split,
+    )
+    
+    dataloader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        num_workers=0,  # Set to 0 for debugging
+        collate_fn=dataset.data_collator,
+        shuffle=False,
+        pin_memory=True,
+    )
+    
+    # Initialize model
+    model = MSCA_Net(cfg=config["model"], gloss_tokenizer=gloss_tokenizer, device=device)
+    model = model.to(device)
+    
+    # Load checkpoint
+    print(f"Loading checkpoint from {args.checkpoint}")
+    checkpoint = torch.load(args.checkpoint, map_location=device)
+    model.load_state_dict(checkpoint["model"], strict=False)
+    model.eval()
+    
+    # Create output directory
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Get dataset name from config or use default
+    data_name = cfg_data.get("dataset_name", f"dataset_{args.split}")
+    if os.path.exists(args.output_dir):
+        print(f"Removing existing output directory: {args.output_dir}")
+        shutil.rmtree(args.output_dir)
+    print(f"Starting attention visualization for {data_name}")
+    print(f"Output directory: {args.output_dir}")
+    print(f"Processing {args.split} split")
+    
+    # Process samples
+    processed_samples = 0
+    with torch.no_grad():
+        for batch_idx, src_input in enumerate(tqdm(dataloader, desc="Processing batches")):
+            if args.max_samples and processed_samples >= args.max_samples:
                 break
-
-    if batch_size is None:
-        print("Warning: Could not determine batch size from attention data")
-        return
-
-    # Process each sample in the batch
-    for sample_idx in range(batch_size):
-        sample_name = f"{batch_start_idx + sample_idx:06d}"
-
-        print(f"Processing sample {sample_name} (batch index {sample_idx})")
-
-        # Save detailed attention maps
-        save_attention_maps_for_sample(
-            attention_data, sample_idx, sample_name, output_dir
-        )
-
-        # Save summary attention maps
-        save_summary_attention_maps(attention_data, sample_idx, sample_name, output_dir)
+                
+            # Move to device
+            if device == "cuda":
+                src_input = {
+                    k: v.cuda() if isinstance(v, torch.Tensor) else v
+                    for k, v in src_input.items()
+                }
+            
+            # Forward pass with attention maps
+            outputs = model(src_input, return_attention_maps=True)
+            attention_data = outputs["attention_data"]
+            sample_names = src_input["name"]
+            
+            # Process and save attention maps
+            process_attention_data(attention_data, sample_names, args.output_dir, data_name)
+            
+            processed_samples += len(sample_names)
+                
+            # except Exception as e:
+            #     print(f"Error processing batch {batch_idx}: {str(e)}")
+            #     continue
+    
+    print(f"Completed! Processed {processed_samples} samples.")
+    print(f"Attention maps saved to: {args.output_dir}")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Visualize attention maps")
-    parser.add_argument(
-        "--attention_data",
-        required=True,
-        help="Path to saved attention data (.pt file)",
-    )
-    parser.add_argument(
-        "--output_dir", default="./attention_visualizations", help="Output directory"
-    )
-    parser.add_argument(
-        "--batch_start_idx",
-        type=int,
-        default=0,
-        help="Starting index for sample naming",
-    )
-
-    args = parser.parse_args()
-
-    # Load attention data
-    print(f"Loading attention data from {args.attention_data}")
-    attention_data = torch.load(args.attention_data, map_location="cpu")
-
-    # Process and save visualizations
-    print(f"Saving visualizations to {args.output_dir}")
-    process_batch_attention(attention_data, args.output_dir, args.batch_start_idx)
-
-    print("Attention visualization completed!")
+    main()

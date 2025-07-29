@@ -1,5 +1,4 @@
 from torch import nn
-import torch
 from model.decoder import Decoder
 from model.encoder import Encoder
 from model.layers import CoordinateMapping
@@ -45,7 +44,6 @@ class SCA(nn.Module):
         self.joint_idx = joint_idx
         self.num_frame = num_frame
 
-        # Use SeparativeCoordinateAttention for proper attention map extraction
         self.x_coord_module = Encoder(cfg)
         self.y_coord_module = Decoder(cfg)
 

@@ -1,9 +1,6 @@
 import torch
 from torch import nn
 
-import torch
-from torch import nn
-
 
 class BaseAttention(nn.Module):
     def __init__(self, d_model, num_heads, dropout=0.0, bias=True):
@@ -74,7 +71,6 @@ class SelfAttention(BaseAttention):
         attn_output = self.out_proj(attn_output)
 
         if return_attn_map:
-            # Average attention weights across heads
             avg_attn_weights = attn_weights.mean(dim=1)
             return attn_output, avg_attn_weights
         else:
@@ -195,8 +191,7 @@ class SelfCausalAttention(BaseAttention):
         attn_output = self.out_proj(attn_output)
 
         if return_attn_map:
-            # Average attention weights across heads
-            avg_attn_weights = attn_weights.mean(dim=1)  # (bsz, tgt_len, tgt_len)
+            avg_attn_weights = attn_weights.mean(dim=1)
             return attn_output, avg_attn_weights
         else:
             return attn_output, None

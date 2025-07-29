@@ -91,7 +91,7 @@ class ResidualNetwork(nn.Module):
 
     def forward(self, x):
         outputs = []
-        shortcut_outputs = [x]  # Lưu trữ output cho shortcut connections
+        shortcut_outputs = [x]
 
         for i, block in enumerate(self.blocks):
             if i == 0:
@@ -118,7 +118,6 @@ class ResidualNetwork(nn.Module):
         return x, outputs
 
 
-# Lớp phụ trợ để đổi thứ tự chiều dễ dàng hơn
 class PermuteLayer(nn.Module):
     def __init__(self, *dims):
         super(PermuteLayer, self).__init__()
@@ -133,19 +132,15 @@ if __name__ == "__main__":
     T = 181
     initial_dim = 256
 
-    # Danh sách kích thước đầu ra của từng block
     residual_blocks = [256, 256, 256]
 
     model = ResidualNetwork(residual_blocks)
     input_tensor = torch.randn(batch_size, T, initial_dim)
 
-    # Lấy cả output cuối cùng và list các output trung gian
     final_output, intermediate_outputs = model(input_tensor)
 
-    # Lưu mô hình
     torch.save(model.state_dict(), "ResidualNetwork.pth")
 
-    # In thông tin về kích thước
     print(f"Input shape: {input_tensor.shape}")
     print(f"Final output shape: {final_output.shape}")
     print("Intermediate output shapes:")

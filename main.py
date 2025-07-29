@@ -20,7 +20,7 @@ from Tokenizer import GlossTokenizer
 from dataset import SLR_Dataset
 from model import MSCA_Net
 
-from opt import train_one_epoch, evaluate_fn, generate_attention_maps
+from opt import train_one_epoch, evaluate_fn
 import utils
 
 
@@ -63,24 +63,6 @@ def get_args_parser():
     )
 
     parser.add_argument("--print_freq", default=10, type=int, help="print frequency")
-
-    # Attention map generation arguments
-    parser.add_argument(
-        "--generate_attention_maps",
-        action="store_true",
-        help="Generate attention maps during evaluation",
-    )
-    parser.add_argument(
-        "--attention_output_dir",
-        default="./attention_maps",
-        help="Output directory for attention maps",
-    )
-    parser.add_argument(
-        "--max_samples",
-        type=int,
-        default=50,
-        help="Maximum number of samples to generate attention maps for",
-    )
 
     return parser
 
@@ -174,7 +156,6 @@ def main(args, cfg):
         "vocab_size": len(gloss_tokenizer),
     }
 
-    print("Calculating FLOPs...")
     model_info = utils.get_model_info(model, input_shape, device)
 
     print("Model Information:")
@@ -246,51 +227,37 @@ def main(args, cfg):
                 "Please specify the trained model: --resume /path/to/best_checkpoint.pth"
             )
 
-        if args.generate_attention_maps:
-            print("Generating attention maps for test dataset...")
-            generate_attention_maps(
-                args,
-                test_dataloader,
-                model,
-                epoch=0,
-                output_dir=args.attention_output_dir + "/test",
-                max_samples=args.max_samples,
-                tokenizer=gloss_tokenizer,
-            )
+        dev_results = evaluate_fn(
+            args,
+            dev_dataloader,
+            model,
+            epoch=0,
+            beam_size=5,
+            print_freq=args.print_freq,
+            results_path=f"{model_dir}/dev_results.json",
+            tokenizer=gloss_tokenizer,
+            log_dir=f"{log_dir}/eval/dev",
+        )
+        print(
+            f"Dev loss of the network on the {len(dev_dataloader)} test videos: {dev_results['loss']:.3f}"
+        )
+        print(f"* DEV wer {dev_results['wer']:.3f}")
 
-            print("Attention map generation completed for both dev and test sets!")
-        else:
-            dev_results = evaluate_fn(
-                args,
-                dev_dataloader,
-                model,
-                epoch=0,
-                beam_size=5,
-                print_freq=args.print_freq,
-                results_path=f"{model_dir}/dev_results.json",
-                tokenizer=gloss_tokenizer,
-                log_dir=f"{log_dir}/eval/dev",
-            )
-            print(
-                f"Dev loss of the network on the {len(dev_dataloader)} test videos: {dev_results['loss']:.3f}"
-            )
-            print(f"* DEV wer {dev_results['wer']:.3f}")
-
-            test_results = evaluate_fn(
-                args,
-                test_dataloader,
-                model,
-                epoch=0,
-                beam_size=5,
-                print_freq=args.print_freq,
-                results_path=f"{model_dir}/test_results.json",
-                tokenizer=gloss_tokenizer,
-                log_dir=f"{log_dir}/eval/test",
-            )
-            print(
-                f"Test loss of the network on the {len(test_dataloader)} test videos: {test_results['loss']:.3f}"
-            )
-            print(f"* TEST wer {test_results['wer']:.3f}")
+        test_results = evaluate_fn(
+            args,
+            test_dataloader,
+            model,
+            epoch=0,
+            beam_size=5,
+            print_freq=args.print_freq,
+            results_path=f"{model_dir}/test_results.json",
+            tokenizer=gloss_tokenizer,
+            log_dir=f"{log_dir}/eval/test",
+        )
+        print(
+            f"Test loss of the network on the {len(test_dataloader)} test videos: {test_results['loss']:.3f}"
+        )
+        print(f"* TEST wer {test_results['wer']:.3f}")
         return
 
     print(f"Training on {device}")

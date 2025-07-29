@@ -1,15 +1,12 @@
 import torch
 from torch import nn
 import math
-import numpy as np
 from torch.nn import functional as F
 
 
 class Dict(dict):
     __setattr__ = dict.__setitem__
-    __getattr__ = dict.__getitem__  # dict.k  ==>  dict[k]
-    # __getattr__ = dict.get  # dict.k  ==>  dict.get(k)
-    # __getattr__ = lambda d, k: d.get(k, '')  # dict.k  ==>  dict.get(k,default)
+    __getattr__ = dict.__getitem__
 
 
 class LearningPositionEmbedding(nn.Embedding):
@@ -51,44 +48,6 @@ class StaticPositionalEncoding(nn.Module):
 
     def forward(self, emb):
         return emb + self.pe[:, : emb.size(1)]
-
-
-class STPositionalEncoding(nn.Module):
-    def __init__(self, channel, joint_num, time_len, domain):
-        super(STPositionalEncoding, self).__init__()
-        self.joint_num = joint_num
-        self.time_len = time_len
-
-        self.domain = domain
-
-        if domain == "temporal":
-            # temporal embedding
-            pos_list = []
-            for t in range(self.time_len):
-                for j_id in range(self.joint_num):
-                    pos_list.append(t)
-        elif domain == "spatial":
-            # spatial embedding
-            pos_list = []
-            for t in range(self.time_len):
-                for j_id in range(self.joint_num):
-                    pos_list.append(j_id)
-
-        position = torch.from_numpy(np.array(pos_list)).unsqueeze(1).float()
-        pe = torch.zeros(self.time_len * self.joint_num, channel)
-
-        div_term = torch.exp(
-            torch.arange(0, channel, 2).float() * -(math.log(10000.0) / channel)
-        )  # channel//2
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.view(time_len, joint_num, channel).permute(2, 0, 1).unsqueeze(0)
-        self.register_buffer("pe", pe)
-
-    def forward(self, x):
-        pos_emb = self.pe[:, :, : x.size(2), :]
-
-        return pos_emb
 
 
 class FeedForward(nn.Module):

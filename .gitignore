@@ -32,3 +32,6 @@ logs/
 *.ptl.tar.lzma
 *.bkp
 *.drawio
+attention_maps/
+attention_maps.json
+web/

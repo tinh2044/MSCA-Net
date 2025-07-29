@@ -21,7 +21,6 @@ class AlignmentModule(nn.Module):
         self.lstm_hidden_size = int(hidden_size / self.num_directions)
         self.dropout = dropout
 
-        # BiLSTM layer
         self.rnn = nn.LSTM(
             input_size=self.input_size,
             hidden_size=self.lstm_hidden_size,
@@ -55,10 +54,8 @@ class AlignmentModule(nn.Module):
             return torch.cat([h[0 : h.size(0) : 2], h[1 : h.size(0) : 2]], 2)
 
         if isinstance(hidden, tuple):
-            # LSTM hidden contains a tuple (hidden state, cell state)
             hidden = tuple([_cat(h) for h in hidden])
         else:
-            # GRU hidden
             hidden = _cat(hidden)
 
         return hidden
@@ -70,10 +67,3 @@ class AlignmentModule(nn.Module):
         logits = self.gloss_layer(x)
 
         return logits
-
-
-if __name__ == "__main__":
-    model = AlignmentModule(cls_num=100, input_size=2048, hidden_size=1024)
-    x = torch.randn(180, 32, 2048)
-    logits = model(x)
-    print(f"AlignmentModule output shape: {logits.shape}")

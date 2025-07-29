@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 from .attention import CrossAttention, SelfCausalAttention
 from .layers import LearningPositionEmbedding
@@ -126,12 +125,8 @@ class Decoder(nn.Module):
             hidden_states, p=self.layerdrop, training=self.training
         )
 
-        if return_attn_map:
-            y_attn_maps = []
-            cross_attn_maps = []
-        else:
-            y_attn_maps = None
-            cross_attn_maps = None
+        y_attn_maps = []
+        cross_attn_maps = []
 
         for decoder_layer in self.layers:
             hidden_states, y_attn_map, cross_attn_map = decoder_layer(
@@ -145,4 +140,8 @@ class Decoder(nn.Module):
                 y_attn_maps.append(y_attn_map)
                 cross_attn_maps.append(cross_attn_map)
 
-        return hidden_states, y_attn_maps, cross_attn_maps
+        return (
+            hidden_states,
+            y_attn_maps[-1] if return_attn_map else None,
+            cross_attn_maps[-1] if return_attn_map else None,
+        )

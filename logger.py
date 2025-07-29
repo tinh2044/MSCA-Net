@@ -12,10 +12,6 @@ from utils import is_dist_avail_and_initialized
 
 
 class SmoothedValue(object):
-    """Track a series of values and provide access to smoothed values over a
-    window or the global series average.
-    """
-
     def __init__(self, window_size=20, fmt=None):
         if fmt is None:
             fmt = "{median:.4f} ({global_avg:.4f})"
@@ -30,9 +26,6 @@ class SmoothedValue(object):
         self.total += value * n
 
     def synchronize_between_processes(self):
-        """
-        Warning: does not synchronize the deque!
-        """
         if not is_dist_avail_and_initialized():
             return
         t = torch.tensor([self.count, self.total], dtype=torch.float64, device="cuda")
@@ -81,16 +74,15 @@ class MetricLogger(object):
         self.logger = Logger(log_dir=log_dir, file_name=file_name)
         self.use_colors = use_colors
 
-        # ANSI color codes for different types of metrics
         self.color_schemes = {
-            "loss": {"key": "\033[91m", "value": "\033[0m"},  # Red
-            "lr": {"key": "\033[94m", "value": "\033[0m"},  # Blue
-            "time": {"key": "\033[93m", "value": "\033[0m"},  # Yellow
-            "data": {"key": "\033[96m", "value": "\033[0m"},  # Cyan
-            "memory": {"key": "\033[95m", "value": "\033[0m"},  # Magenta
-            "eta": {"key": "\033[92m", "value": "\033[0m"},  # Green
-            "step": {"key": "\033[1m", "value": "\033[0m"},  # Bold
-            "default": {"key": "\033[0m", "value": "\033[0m"},  # Reset
+            "loss": {"key": "\033[91m", "value": "\033[0m"},
+            "lr": {"key": "\033[94m", "value": "\033[0m"},
+            "time": {"key": "\033[93m", "value": "\033[0m"},
+            "data": {"key": "\033[96m", "value": "\033[0m"},
+            "memory": {"key": "\033[95m", "value": "\033[0m"},
+            "eta": {"key": "\033[92m", "value": "\033[0m"},
+            "step": {"key": "\033[1m", "value": "\033[0m"},
+            "default": {"key": "\033[0m", "value": "\033[0m"},
         }
 
     def update(self, **kwargs):
@@ -122,7 +114,6 @@ class MetricLogger(object):
         return self.delimiter.join(loss_str)
 
     def _get_color_scheme(self, metric_name):
-        """Get color scheme for a metric based on its name"""
         for key, scheme in self.color_schemes.items():
             if key in metric_name.lower():
                 return scheme
@@ -192,7 +183,6 @@ class MetricLogger(object):
 
     def _format_log(self, i, total_len, eta_string, iter_time, data_time, MB):
         if self.use_colors:
-            # Colored version with ANSI codes
             step_color = self.color_schemes["step"]["key"]
             eta_color = self.color_schemes["eta"]["key"]
             time_color = self.color_schemes["time"]["key"]
@@ -205,7 +195,6 @@ class MetricLogger(object):
             else:
                 return f"{step_color}Step [{i}/{total_len}]{reset_color}{self.delimiter}{eta_color}ETA: {eta_string}{reset_color}{self.delimiter}{str(self)}{self.delimiter}{time_color}Time: {str(iter_time)}{reset_color}{self.delimiter}{data_color}Data: {str(data_time)}{reset_color}"
         else:
-            # Non-colored version
             if torch.cuda.is_available():
                 return "Step [{}/{}]{}ETA: {}{}{}{}Time: {}{}Data: {}{}Max Memory: {:.0f}MB".format(
                     i,
@@ -240,17 +229,14 @@ class Logger:
     def __init__(self, log_dir="logs", file_name=""):
         os.makedirs(log_dir, exist_ok=True)
 
-        # Fix file path construction
         if file_name:
             self.log_file = os.path.join(log_dir, file_name)
         else:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             self.log_file = os.path.join(log_dir, f"log_{timestamp}.log")
 
-        # Remove default handler
         logger.remove()
 
-        # Add handlers for both console and file with custom format
         logger.add(
             sys.stdout,
             format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | {message}",
@@ -267,24 +253,19 @@ class Logger:
         logger.info(f"Logging to {self.log_file}")
 
     def write(self, message):
-        """Write log using loguru"""
         logger.info(message.strip())
 
     def flush(self):
-        """Flush is handled by loguru"""
         pass
 
     @staticmethod
     def info(msg):
-        """Log at INFO level"""
         logger.info(msg)
 
     @staticmethod
     def warning(msg):
-        """Log at WARNING level"""
         logger.warning(msg)
 
     @staticmethod
     def error(msg):
-        """Log at ERROR level"""
         logger.error(msg)

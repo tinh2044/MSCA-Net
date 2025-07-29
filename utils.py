@@ -2,7 +2,6 @@ import os
 
 import numpy as np
 import torch
-from tqdm import tqdm
 import tensorflow as tf
 from itertools import groupby
 
@@ -80,13 +79,11 @@ def calculate_flops(model, input_shape, device="cpu"):
         from thop import profile, clever_format
         import torch
 
-        # Create dummy input data based on model input requirements
         batch_size = input_shape.get("batch_size", 1)
         seq_len = input_shape.get("seq_len", 100)
         num_joints = input_shape.get("num_joints", 542)  # Total joints dimension
         vocab_size = input_shape.get("vocab_size", 1000)
 
-        # Create dummy inputs
         dummy_input = {
             "keypoints": torch.randn(batch_size, seq_len, num_joints, 2).to(device),
             "mask": torch.ones(batch_size, seq_len, dtype=torch.long).to(device),
@@ -104,19 +101,17 @@ def calculate_flops(model, input_shape, device="cpu"):
             "name": ["dummy_name"] * batch_size,
         }
 
-        # Calculate FLOPs
         model.eval()
         with torch.no_grad():
             macs, params = profile(model, inputs=(dummy_input,), verbose=False)
 
-        # Format the results
         macs_str, params_str = clever_format([macs, params], "%.3f")
 
         flops_info = {
-            "flops": macs * 2,  # FLOPs = MACs * 2
+            "flops": macs * 2,
             "macs": macs,
             "params": params,
-            "flops_str": f"{macs * 2 / 1e9:.3f}G",  # Convert to GFLOPs
+            "flops_str": f"{macs * 2 / 1e9:.3f}G",
             "macs_str": macs_str,
             "params_str": params_str,
         }
@@ -145,7 +140,6 @@ def get_model_info(model, input_shape, device="cpu"):
     """
     model_info = {}
 
-    # Count parameters
     total_params = count_model_parameters(model)
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -153,7 +147,6 @@ def get_model_info(model, input_shape, device="cpu"):
     model_info["trainable_params"] = trainable_params
     model_info["non_trainable_params"] = total_params - trainable_params
 
-    # Calculate FLOPs
     flops_info = calculate_flops(model, input_shape, device)
     if flops_info:
         model_info.update(flops_info)
@@ -164,7 +157,6 @@ def get_model_info(model, input_shape, device="cpu"):
 def ctc_decode(gloss_logits, beam_size, input_lengths):
     gloss_logits = gloss_logits.permute(1, 0, 2)
     gloss_logits = gloss_logits.cpu().detach().numpy()
-    # print(gloss_logits.shape)
     tf_gloss_logits = np.concatenate(
         (gloss_logits[:, :, 1:], gloss_logits[:, :, 0, None]),
         axis=-1,
@@ -190,9 +182,6 @@ def ctc_decode(gloss_logits, beam_size, input_lengths):
 
 
 def setup_for_distributed(is_master):
-    """
-    This function disables printing when not in master process
-    """
     import builtins as __builtin__
 
     builtin_print = __builtin__.print
@@ -235,7 +224,6 @@ def save_on_master(*args, **kwargs):
 
 
 def init_distributed_mode(args):
-    print(os.environ)
     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
         args.rank = int(os.environ["RANK"])
         args.world_size = int(os.environ["WORLD_SIZE"])
