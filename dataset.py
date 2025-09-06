@@ -45,7 +45,6 @@ class SLR_Dataset(Dataset.Dataset):
 
         keypoints = sample["keypoints"][:, :, :-2]
         gloss = sample["gloss"].replace("  ", " ").strip()
-        # text = sample["text"]
         if "name" in sample:
             name = sample["name"]
         elif "id" in sample:
@@ -70,7 +69,6 @@ class SLR_Dataset(Dataset.Dataset):
             length_keypoints_batch.append(keypoints.shape[0])
             keypoints_batch.append(keypoints)
             gloss_batch.append(gloss)
-            # text_batch.append(text)
             name_batch.append(name)
 
         padding_keypoints_batch = []
@@ -116,7 +114,6 @@ class SLR_Dataset(Dataset.Dataset):
             "gloss_labels": gloss_output["input_ids"],
             "gloss_lengths": gloss_output["length"],
             "gloss_input": gloss_batch,
-            # "text_input": text_batch,
         }
 
         return src_input

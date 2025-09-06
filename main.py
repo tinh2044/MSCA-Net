@@ -25,9 +25,7 @@ import utils
 
 
 def get_args_parser():
-    parser = argparse.ArgumentParser(
-        "Visual-Language-Pretraining (VLP) V2 scripts", add_help=False
-    )
+    parser = argparse.ArgumentParser("MSCA-Net scripts", add_help=False)
     parser.add_argument("--batch-size", default=2, type=int)
     parser.add_argument("--epochs", default=100, type=int)
 
@@ -56,11 +54,9 @@ def get_args_parser():
         type=bool,
         help="Perform evaluation on last epoch",
     )
-    parser.add_argument("--num_workers", default=4, type=int)
+    parser.add_argument("--num_workers", default=0, type=int)
 
-    parser.add_argument(
-        "--cfg_path", type=str, required=True, help="Path to config file"
-    )
+    parser.add_argument("--cfg", type=str, required=True, help="Path to config file")
 
     parser.add_argument("--print_freq", default=10, type=int, help="print frequency")
 
@@ -76,7 +72,6 @@ def main(args, cfg):
     utils.init_distributed_mode(args)
 
     seed = args.seed + utils.get_rank()
-    # Set seed
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
@@ -136,14 +131,11 @@ def main(args, cfg):
 
     print(f"Number of parameters: {n_parameters}")
 
-    # Calculate FLOPs
-    # Calculate total number of joints (maximum index + 1)
     all_joint_indices = (
         cfg["model"]["body_idx"] + cfg["model"]["left_idx"] + cfg["model"]["right_idx"]
     )
     max_joint_index = max(all_joint_indices)
 
-    # Add joint_parts if they exist in data config
     if "joint_parts" in cfg["data"]:
         for part in cfg["data"]["joint_parts"]:
             if isinstance(part, list):
@@ -152,21 +144,20 @@ def main(args, cfg):
     input_shape = {
         "batch_size": args.batch_size,
         "seq_len": cfg["data"]["max_len"],
-        "num_joints": max_joint_index + 1,  # +1 because indices are 0-based
+        "num_joints": max_joint_index + 1,
         "vocab_size": len(gloss_tokenizer),
     }
 
     model_info = utils.get_model_info(model, input_shape, device)
 
     print("Model Information:")
-    print(f"  Total parameters: {model_info['total_params']:,}")
-    print(f"  Trainable parameters: {model_info['trainable_params']:,}")
-    print(f"  Non-trainable parameters: {model_info['non_trainable_params']:,}")
+    print(f"Total parameters: {model_info['total_params']:,}")
+    print(f"Trainable parameters: {model_info['trainable_params']:,}")
+    print(f"Non-trainable parameters: {model_info['non_trainable_params']:,}")
 
     if "flops" in model_info:
-        print(f"  FLOPs: {model_info['flops_str']}")
-        print(f"  MACs: {model_info['macs_str']}")
-        print(f"  Parameters (from thop): {model_info['params_str']}")
+        print(f"FLOPs: {model_info['flops_str']}")
+        print(f"MACs: {model_info['macs_str']}")
     print()
 
     if args.finetune:
@@ -178,15 +169,12 @@ def main(args, cfg):
 
     optimizer = build_optimizer(config=cfg["training"]["optimization"], model=model)
 
-    # Set initial_lr for optimizer (needed for scheduler resume)
     for group in optimizer.param_groups:
         if "initial_lr" not in group:
             group["initial_lr"] = group["lr"]
 
-    # Update config with total epochs for warmup scheduler
     cfg["training"]["optimization"]["total_epochs"] = args.epochs
 
-    # Initialize scheduler with correct last_epoch for resume
     scheduler_last_epoch = -1
     if args.resume:
         print(f"Resume training from {args.resume}")
@@ -194,7 +182,6 @@ def main(args, cfg):
         if utils.check_state_dict(model, checkpoint["model"]):
             ret = model.load_state_dict(checkpoint["model"], strict=False)
         else:
-            print("Model and state dict are different")
             raise ValueError("Model and state dict are different")
 
         if "epoch" in checkpoint:
@@ -203,14 +190,13 @@ def main(args, cfg):
         print("Missing keys: \n", "\n".join(ret.missing_keys))
         print("Unexpected keys: \n", "\n".join(ret.unexpected_keys))
 
-    # Create scheduler with correct last_epoch
     scheduler, scheduler_type = build_scheduler(
         config=cfg["training"]["optimization"],
         optimizer=optimizer,
         last_epoch=scheduler_last_epoch,
     )
+    logger.info(f"Scheduler: {scheduler_type}")
 
-    # Load optimizer and scheduler state if resuming
     if args.resume:
         if not args.eval and "optimizer" in checkpoint and "scheduler" in checkpoint:
             print("Loading optimizer and scheduler")
@@ -241,7 +227,7 @@ def main(args, cfg):
         print(
             f"Dev loss of the network on the {len(dev_dataloader)} test videos: {dev_results['loss']:.3f}"
         )
-        print(f"* DEV wer {dev_results['wer']:.3f}")
+        print(f"DEV wer {dev_results['wer']:.3f}")
 
         test_results = evaluate_fn(
             args,
@@ -257,7 +243,7 @@ def main(args, cfg):
         print(
             f"Test loss of the network on the {len(test_dataloader)} test videos: {test_results['loss']:.3f}"
         )
-        print(f"* TEST wer {test_results['wer']:.3f}")
+        print(f"TEST wer {test_results['wer']:.3f}")
         return
 
     print(f"Training on {device}")
@@ -326,7 +312,7 @@ def main(args, cfg):
                     },
                     checkpoint_path,
                 )
-        print(f"* DEV wer {test_results['wer']:.3f} Min DEV WER {min_wer}")
+        print(f"DEV wer {test_results['wer']:.3f} Min DEV WER {min_wer}")
 
         log_results = {
             **{f"train_{k}": v for k, v in train_results.items()},
@@ -343,7 +329,7 @@ def main(args, cfg):
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print("Training time {}".format(total_time_str))
+    print(f"Training time {total_time_str}")
 
 
 def init_ddp(local_rank):
@@ -354,11 +340,10 @@ def init_ddp(local_rank):
 
 if __name__ == "__main__":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    parser = argparse.ArgumentParser("MSCA scripts", parents=[get_args_parser()])
+    parser = argparse.ArgumentParser("MSCA-Net scripts", parents=[get_args_parser()])
     args = parser.parse_args()
-    with open(args.cfg_path, "r+", encoding="utf-8") as f:
+    with open(args.cfg, "r+", encoding="utf-8") as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
-    # config.update({k: v for k, v in vars(args).items() if v is not None})
     Path(config["training"]["model_dir"]).mkdir(parents=True, exist_ok=True)
     main(args, config)

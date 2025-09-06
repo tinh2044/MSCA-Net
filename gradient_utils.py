@@ -4,16 +4,6 @@ import numpy as np
 
 
 def clip_gradients(model, max_norm=1.0):
-    """
-    Clip gradients to prevent gradient explosion
-
-    Args:
-        model: PyTorch model
-        max_norm: Maximum gradient norm
-
-    Returns:
-        grad_norm: Gradient norm before clipping
-    """
     if max_norm > 0:
         grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
         return grad_norm
@@ -21,17 +11,6 @@ def clip_gradients(model, max_norm=1.0):
 
 
 def check_model_gradients(model, step=None):
-    """
-    Check for NaN or inf gradients in model parameters
-
-    Args:
-        model: PyTorch model
-        step: Current training step (for logging)
-
-    Returns:
-        has_nan_grad: Boolean indicating if any gradient is NaN
-        has_inf_grad: Boolean indicating if any gradient is inf
-    """
     has_nan_grad = False
     has_inf_grad = False
 
@@ -48,15 +27,6 @@ def check_model_gradients(model, step=None):
 
 
 def get_gradient_norm(model):
-    """
-    Calculate the gradient norm of model parameters
-
-    Args:
-        model: PyTorch model
-
-    Returns:
-        grad_norm: Gradient norm
-    """
     total_norm = 0
     param_count = 0
 
@@ -71,12 +41,6 @@ def get_gradient_norm(model):
 
 
 def stabilize_model_weights(model):
-    """
-    Stabilize model weights by clamping extreme values
-
-    Args:
-        model: PyTorch model
-    """
     with torch.no_grad():
         for name, param in model.named_parameters():
             if torch.isnan(param).any() or torch.isinf(param).any():
@@ -90,13 +54,6 @@ def stabilize_model_weights(model):
 
 
 def log_gradient_stats(model, step):
-    """
-    Log gradient statistics for debugging
-
-    Args:
-        model: PyTorch model
-        step: Current training step
-    """
     grad_stats = {}
 
     for name, param in model.named_parameters():
@@ -110,7 +67,6 @@ def log_gradient_stats(model, step):
                 "norm": grad.norm().item(),
             }
 
-    # Log statistics for key layers
     key_layers = [
         "recognition_head",
         "coordinates_fusion",
@@ -126,37 +82,14 @@ def log_gradient_stats(model, step):
 
 
 def reset_model_on_nan(model, optimizer):
-    """
-    Reset model and optimizer state when NaN is detected
-
-    Args:
-        model: PyTorch model
-        optimizer: PyTorch optimizer
-    """
-    print("Resetting model due to NaN/inf detection...")
-
-    # Reset model weights
     stabilize_model_weights(model)
 
-    # Reset optimizer state
     optimizer.state = {}
 
-    # Zero gradients
     optimizer.zero_grad()
-
-    print("Model and optimizer reset completed.")
 
 
 def warmup_learning_rate(optimizer, step, warmup_steps, base_lr):
-    """
-    Apply learning rate warmup
-
-    Args:
-        optimizer: PyTorch optimizer
-        step: Current training step
-        warmup_steps: Number of warmup steps
-        base_lr: Base learning rate
-    """
     if step < warmup_steps:
         lr = base_lr * (step + 1) / warmup_steps
         for param_group in optimizer.param_groups:
@@ -166,15 +99,6 @@ def warmup_learning_rate(optimizer, step, warmup_steps, base_lr):
 
 
 def check_data_validity(data_dict):
-    """
-    Check if input data contains NaN or inf values
-
-    Args:
-        data_dict: Dictionary containing input data
-
-    Returns:
-        is_valid: Boolean indicating if data is valid
-    """
     for key, value in data_dict.items():
         if isinstance(value, torch.Tensor):
             if torch.isnan(value).any():
@@ -187,28 +111,13 @@ def check_data_validity(data_dict):
 
 
 def safe_backward(loss, model, optimizer, max_grad_norm=1.0):
-    """
-    Safe backward pass with gradient clipping and NaN checking
-
-    Args:
-        loss: Loss tensor
-        model: PyTorch model
-        optimizer: PyTorch optimizer
-        max_grad_norm: Maximum gradient norm for clipping
-
-    Returns:
-        success: Boolean indicating if backward pass was successful
-    """
     try:
-        # Check if loss is valid
         if torch.isnan(loss) or torch.isinf(loss):
             print(f"Invalid loss detected: {loss}")
             return False
 
-        # Backward pass
         loss.backward()
 
-        # Check gradients
         has_nan_grad, has_inf_grad = check_model_gradients(model)
 
         if has_nan_grad or has_inf_grad:
@@ -216,10 +125,8 @@ def safe_backward(loss, model, optimizer, max_grad_norm=1.0):
             optimizer.zero_grad()
             return False
 
-        # Clip gradients
         grad_norm = clip_gradients(model, max_grad_norm)
 
-        # Check if gradient norm is reasonable
         if grad_norm is not None and grad_norm > 100:
             print(f"Large gradient norm detected: {grad_norm}")
 

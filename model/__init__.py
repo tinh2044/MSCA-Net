@@ -26,7 +26,6 @@ class RecognitionHead(nn.Module):
         self._init_weights()
 
     def _init_weights(self):
-        """Initialize weights to prevent NaN/inf issues"""
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)

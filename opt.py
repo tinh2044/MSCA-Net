@@ -117,7 +117,7 @@ def evaluate_fn(
                 json.dump(results, f)
     for k, v in evaluation_results.items():
         print(f"{k}: {v:.3f}")
-    print("* Averaged results:", metric_logger)
-    print("* DEV loss {losses.global_avg:.3f}".format(losses=metric_logger.loss))
+    print("Averaged results:", metric_logger)
+    print(f"DEV loss {metric_logger.loss.global_avg:.3f}")
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}

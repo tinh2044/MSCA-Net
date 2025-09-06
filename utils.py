@@ -64,24 +64,13 @@ def count_model_parameters(model):
 
 
 def calculate_flops(model, input_shape, device="cpu"):
-    """
-    Calculate FLOPs for MSCA_Net model
-
-    Args:
-        model: MSCA_Net model
-        input_shape: Dictionary containing input shapes
-        device: Device to run calculation on
-
-    Returns:
-        Dictionary containing FLOPs and MACs information
-    """
     try:
         from thop import profile, clever_format
         import torch
 
         batch_size = input_shape.get("batch_size", 1)
         seq_len = input_shape.get("seq_len", 100)
-        num_joints = input_shape.get("num_joints", 542)  # Total joints dimension
+        num_joints = input_shape.get("num_joints", 542)
         vocab_size = input_shape.get("vocab_size", 1000)
 
         dummy_input = {
@@ -127,17 +116,6 @@ def calculate_flops(model, input_shape, device="cpu"):
 
 
 def get_model_info(model, input_shape, device="cpu"):
-    """
-    Get comprehensive model information including parameters and FLOPs
-
-    Args:
-        model: The model to analyze
-        input_shape: Dictionary containing input shapes
-        device: Device to run calculation on
-
-    Returns:
-        Dictionary containing model information
-    """
     model_info = {}
 
     total_params = count_model_parameters(model)
