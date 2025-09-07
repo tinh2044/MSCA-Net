@@ -65,7 +65,9 @@ def get_args_parser():
 
 def main(args, cfg):
     model_dir = cfg["training"]["model_dir"]
-    log_dir = f"{model_dir}/log"
+    log_dir = f"{model_dir}"
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_file = f"{log_dir}/log_{timestamp}.log"
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -222,7 +224,7 @@ def main(args, cfg):
             print_freq=args.print_freq,
             results_path=f"{model_dir}/dev_results.json",
             tokenizer=gloss_tokenizer,
-            log_dir=f"{log_dir}/eval/dev",
+            log_file=log_file,
         )
         print(
             f"Dev loss of the network on the {len(dev_dataloader)} test videos: {dev_results['loss']:.3f}"
@@ -238,7 +240,7 @@ def main(args, cfg):
             print_freq=args.print_freq,
             results_path=f"{model_dir}/test_results.json",
             tokenizer=gloss_tokenizer,
-            log_dir=f"{log_dir}/eval/test",
+            log_file=log_file,
         )
         print(
             f"Test loss of the network on the {len(test_dataloader)} test videos: {test_results['loss']:.3f}"
@@ -260,7 +262,7 @@ def main(args, cfg):
             optimizer,
             epoch,
             print_freq=args.print_freq,
-            log_dir=f"{log_dir}/train",
+            log_file=log_file,
         )
         scheduler.step()
         checkpoint_paths = [output_dir / f"checkpoint_{epoch}.pth"]
@@ -286,7 +288,7 @@ def main(args, cfg):
             beam_size=5,
             print_freq=args.print_freq,
             tokenizer=gloss_tokenizer,
-            log_dir=f"{log_dir}/test",
+            log_file=log_file,
         )
         dev_results = evaluate_fn(
             args,
@@ -296,7 +298,7 @@ def main(args, cfg):
             beam_size=5,
             print_freq=args.print_freq,
             tokenizer=gloss_tokenizer,
-            log_dir=f"{log_dir}/dev",
+            log_file=log_file,
         )
 
         if min_wer > test_results["wer"] or min_wer > dev_results["wer"]:

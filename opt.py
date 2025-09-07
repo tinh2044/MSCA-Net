@@ -1,7 +1,6 @@
 import torch
 import json
 from collections import defaultdict
-import datetime
 from metrics import wer_list
 
 from logger import MetricLogger, SmoothedValue
@@ -9,14 +8,12 @@ from utils import ctc_decode
 
 
 def train_one_epoch(
-    args, model, data_loader, optimizer, epoch, print_freq=1, log_dir="log/train"
+    args, model, data_loader, optimizer, epoch, print_freq=1, log_file=""
 ):
     model.train()
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     metric_logger = MetricLogger(
         delimiter="  ",
-        log_dir=log_dir,
-        file_name=f"epoch_{epoch}_({timestamp}).log",
+        log_file=log_file,
     )
     metric_logger.add_meter("lr", SmoothedValue(window_size=1, fmt="{value:.6f}"))
     header = f"Training epoch: [{epoch}/{args.epochs}]"
@@ -52,12 +49,11 @@ def evaluate_fn(
     print_freq=1,
     results_path=None,
     tokenizer=None,
-    log_dir="log/test",
+    log_file="log/test",
 ):
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     model.eval()
     metric_logger = MetricLogger(
-        log_dir=log_dir, file_name=f"epoch_{epoch}_({timestamp}).log"
+        log_file=log_file,
     )
     header = f"Test epoch: [{epoch}/{args.epochs}]"
     print_freq = 10

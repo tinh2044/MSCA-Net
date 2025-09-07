@@ -192,7 +192,7 @@ testing:
   recognition:
     beam_size: 5
 training:
-  model_dir: ./outputs/Phoenix-2014
+  model_dir: ./outputs_Phoenix-2014
   optimization:
     betas:
       - 0.9
