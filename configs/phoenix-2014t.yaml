@@ -52,7 +52,7 @@ data:
   lowercase: false
   max_len: 128
   max_sent_length: 128
-  normalize: false
+  normalize: true
   root: ./data/Phoenix-2014-T
   shuffle: true
 device: cpu
