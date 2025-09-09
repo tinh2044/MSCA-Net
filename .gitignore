@@ -23,7 +23,6 @@ docs/
 logs/
 *.pth
 *.pt
-*.pkl
 *.ptl
 *.ptl.tar
 *.ptl.tar.gz
