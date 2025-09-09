@@ -117,7 +117,7 @@ def build_scheduler(
             lr_scheduler.CosineAnnealingLR(
                 optimizer=optimizer,
                 eta_min=config.get("eta_min", 0),
-                T_max=config.get("t_max", 20),
+                T_max=config.get("t_max", 200),
                 last_epoch=last_epoch,
             ),
             "epoch",
