@@ -43,7 +43,7 @@ class SLR_Dataset(Dataset.Dataset):
         with open(path, "rb") as f:
             sample = pickle.load(f)
 
-        keypoints = sample["keypoints"][:, :, :-2]
+        keypoints = sample["keypoints"][:, :, :]
         gloss = sample["gloss"].replace("  ", " ").strip()
         if "name" in sample:
             name = sample["name"]
