@@ -37,20 +37,19 @@ Continuous Sign Language Recognition (CSLR) models that rely on skeleton keypoin
 
 ## Results
 
-MSCA-Net achieves new state-of-the-art results on three large-scale CSLR benchmarks:
+<!-- MSCA-Net achieves new state-of-the-art results on three large-scale CSLR benchmarks:
 
 | Dataset | WER | Del/Ins | FLOPs | Params | Model | Config |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | PHOENIX-2014 | **17.2%** | 4.6/1.6 | 19.87G | 21M | [ckpt](placeholder) | [config](configs/phoenix-2014.yaml) |
 | PHOENIX-2014T | **16.8%** | - | 19.87G | 21M | [ckpt](placeholder) | [config](configs/phoenix-2014t.yaml) |
-| CSL-Daily | **25.2%** | - | 19.87G | 21M | [ckpt](placeholder) | [config](configs/csl-daily.yaml) |
+| CSL-Daily | **25.2%** | - | 19.87G | 21M | [ckpt](placeholder) | [config](configs/csl-daily.yaml) | -->
 
 ## Installation
 
 ```bash
 conda create -n msca-net python==3.8
 conda activate msca-net
-# Please install PyTorch according to your CUDA version
 pip install -r requirements.txt
 ```
 
@@ -62,21 +61,21 @@ Download datasets from their official websites and place them under the correspo
 
 * [PHOENIX-2014](https://www-i6.informatik.rwth-aachen.de/~koller/RWTH-PHOENIX/)
 * [PHOENIX-2014T](https://www-i6.informatik.rwth-aachen.de/~koller/RWTH-PHOENIX-2014-T/)
-* [CSL-Daily](http://home.ustc.edu.cn/~zhouh156/dataset/csl-daily/)
+<!-- * [CSL-Daily](http://home.ustc.edu.cn/~zhouh156/dataset/csl-daily/) -->
 
 ### Pretrained Models
 
 Download pretrained models and place them under `pretrained_models/`:
 * [PHOENIX-2014](placeholder)
 * [PHOENIX-2014T](placeholder) 
-* [CSL-Daily](placeholder)
+<!-- * [CSL-Daily](placeholder) -->
 
 ### Keypoints
 
-We provide pre-extracted human keypoints using MediaPipe/OpenPose:
+<!-- We provide pre-extracted human keypoints using MediaPipe/OpenPose:
 * [PHOENIX-2014](placeholder)
-* [PHOENIX-2014T](placeholder)
-* [CSL-Daily](placeholder)
+* [PHOENIX-2014T](placeholder) -->
+<!-- * [CSL-Daily](placeholder) -->
 
 Place them under `data/[dataset_name]/`.
 
@@ -98,13 +97,13 @@ python main.py --cfg_path configs/phoenix-2014.yaml \
                --device cuda
 ```
 
-### CSL-Daily
+<!-- ### CSL-Daily
 ```bash
 python main.py --cfg_path configs/csl-daily.yaml \
                --batch-size 8 \
                --epochs 100 \
                --device cuda
-```
+``` -->
 
 ### Resume Training
 ```bash
