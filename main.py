@@ -214,7 +214,21 @@ def main(args, cfg):
             logger.warning(
                 "Please specify the trained model: --resume /path/to/best_checkpoint.pth"
             )
-
+        test_results = evaluate_fn(
+            args,
+            test_dataloader,
+            model,
+            epoch=0,
+            beam_size=5,
+            print_freq=args.print_freq,
+            results_path=f"{model_dir}/test_results.json",
+            tokenizer=gloss_tokenizer,
+            log_file=log_file,
+        )
+        print(
+            f"Test loss of the network on the {len(test_dataloader)} test videos: {test_results['loss']:.3f}"
+        )
+        print(f"TEST wer {test_results['wer']:.3f}")
         dev_results = evaluate_fn(
             args,
             dev_dataloader,
@@ -231,21 +245,6 @@ def main(args, cfg):
         )
         print(f"DEV wer {dev_results['wer']:.3f}")
 
-        test_results = evaluate_fn(
-            args,
-            test_dataloader,
-            model,
-            epoch=0,
-            beam_size=5,
-            print_freq=args.print_freq,
-            results_path=f"{model_dir}/test_results.json",
-            tokenizer=gloss_tokenizer,
-            log_file=log_file,
-        )
-        print(
-            f"Test loss of the network on the {len(test_dataloader)} test videos: {test_results['loss']:.3f}"
-        )
-        print(f"TEST wer {test_results['wer']:.3f}")
         return
 
     print(f"Training on {device}")
@@ -289,17 +288,18 @@ def main(args, cfg):
             print_freq=args.print_freq,
             tokenizer=gloss_tokenizer,
             log_file=log_file,
+            results_path=f"{model_dir}/test_results.json",
         )
-        dev_results = evaluate_fn(
-            args,
-            dev_dataloader,
-            model,
-            epoch,
-            beam_size=5,
-            print_freq=args.print_freq,
-            tokenizer=gloss_tokenizer,
-            log_file=log_file,
-        )
+        # dev_results = evaluate_fn(
+        #     args,
+        #     dev_dataloader,
+        #     model,
+        #     epoch,
+        #     beam_size=5,
+        #     print_freq=args.print_freq,
+        #     tokenizer=gloss_tokenizer,
+        #     log_file=log_file,
+        # )
         if min_wer > test_results["wer"]:
             min_wer = test_results["wer"]
             checkpoint_paths = [output_dir / "best_checkpoint.pth"]
@@ -314,11 +314,11 @@ def main(args, cfg):
                     checkpoint_path,
                 )
         print(f"Test wer {test_results['wer']:.3f}, Min Test WER {min_wer}")
-        print(f"Dev wer {dev_results['wer']:.3f}, Min Dev WER {min_wer}")
+        # print(f"Dev wer {dev_results['wer']:.3f}, Min Dev WER {min_wer}")
         log_results = {
             **{f"train_{k}": v for k, v in train_results.items()},
             **{f"test_{k}": v for k, v in test_results.items()},
-            **{f"dev_{k}": v for k, v in dev_results.items()},
+            # **{f"dev_{k}": v for k, v in dev_results.items()},
             "epoch": epoch,
             "n_parameters": n_parameters,
         }
