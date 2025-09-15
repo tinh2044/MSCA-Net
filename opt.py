@@ -24,12 +24,12 @@ def train_one_epoch(
         output = model(src_input)
         loss = output["total_loss"]
         with torch.autograd.set_detect_anomaly(True):
-            if not (torch.isnan(loss) or torch.isinf(loss)):
+            if torch.isfinite(loss).all().item():
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
             else:
-                print("NaN loss")
+                print("Non-finite loss detected; skipping step")
         model.zero_grad()
         for k, v in output.items():
             if "loss" in k and "gloss" not in k:
@@ -64,7 +64,7 @@ def evaluate_fn(
             metric_logger.log_every(dataloader, print_freq, header)
         ):
             output = model(src_input)
-
+            gls_logits = output
             for k, gls_logits in output.items():
                 if "_loss" in k and "gloss" not in k:
                     metric_logger.update(**{k: gls_logits})
@@ -114,6 +114,6 @@ def evaluate_fn(
     for k, v in evaluation_results.items():
         print(f"{k}: {v:.3f}")
     print("Averaged results:", metric_logger)
-    print(f"DEV loss {metric_logger.loss.global_avg:.3f}")
+    print(f"Loss {metric_logger.loss.global_avg:.3f}")
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}

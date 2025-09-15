@@ -11,7 +11,10 @@ class KeypointModule(nn.Module):
         super().__init__()
         self.joint_idx = joint_idx
         self.num_frame = num_frame
-        self.coordinate_mapping = CoordinateMapping(len(joint_idx), cfg["d_model"])
+        coord_mode = cfg.get("coord_mapping", "independent")
+        self.coordinate_mapping = CoordinateMapping(
+            len(joint_idx), cfg["d_model"], mode=coord_mode
+        )
         self.sca = SCA(joint_idx, num_frame, cfg)
         self.residual = ResidualNetwork(cfg["residual_blocks"])
 

@@ -1,6 +1,10 @@
 import torch.nn as nn
 from .attention import CrossAttention, SelfCausalAttention
-from .layers import LearningPositionEmbedding
+from .layers import (
+    # LearningPositionEmbedding,
+    build_position_embedding,
+    RelativePositionBias,
+)
 from .utils import create_attention_mask, create_causal_attention_mask
 
 
@@ -13,6 +17,7 @@ class DecoderLayer(nn.Module):
             d_model=self.d_model,
             num_heads=config["decoder_attention_heads"],
             dropout=config["attention_dropout"],
+            relative_position_bias=config.get("rel_pos_bias", None),
         )
 
         self.dropout = config["dropout"]
@@ -24,6 +29,7 @@ class DecoderLayer(nn.Module):
             self.d_model,
             config["decoder_attention_heads"],
             dropout=config["attention_dropout"],
+            relative_position_bias=config.get("rel_pos_bias", None),
         )
 
         self.encoder_attn_layer_norm = nn.LayerNorm(self.d_model)
@@ -88,13 +94,24 @@ class Decoder(nn.Module):
         self.layerdrop = config["decoder_layerdrop"]
         embed_dim = config["d_model"]
 
-        self.embed_positions = LearningPositionEmbedding(
-            config["max_position_embeddings"],
-            embed_dim,
+        self.embed_positions = build_position_embedding(config)
+
+        self.use_relative_bias = (
+            config.get("position_encoding", "learned") == "relative"
+        )
+        self.rel_pos_bias = (
+            RelativePositionBias(
+                config["decoder_attention_heads"], config["max_position_embeddings"]
+            )
+            if self.use_relative_bias
+            else None
         )
 
         self.layers = nn.ModuleList(
-            [DecoderLayer(config) for _ in range(config["decoder_layers"])]
+            [
+                DecoderLayer({**config, "rel_pos_bias": self.rel_pos_bias})
+                for _ in range(config["decoder_layers"])
+            ]
         )
 
         self.layernorm_embedding = nn.LayerNorm(config["d_model"])

@@ -1,7 +1,11 @@
 import torch
 import torch.nn as nn
 from .attention import SelfAttention
-from .layers import LearningPositionEmbedding
+from .layers import (
+    # LearningPositionEmbedding,
+    build_position_embedding,
+    RelativePositionBias,
+)
 from .utils import create_attention_mask
 
 
@@ -14,6 +18,7 @@ class EncoderLayer(nn.Module):
             d_model=self.d_model,
             num_heads=config["encoder_attention_heads"],
             dropout=config["attention_dropout"],
+            relative_position_bias=config.get("rel_pos_bias", None),
         )
         self.self_attn_layer_norm = nn.LayerNorm(self.d_model)
         self.dropout = config["dropout"]
@@ -67,13 +72,24 @@ class Encoder(nn.Module):
         self.layerdrop = config["encoder_layerdrop"]
 
         embed_dim = config["d_model"]
-        self.embed_positions = LearningPositionEmbedding(
-            config["max_position_embeddings"],
-            embed_dim,
+        self.embed_positions = build_position_embedding(config)
+
+        self.use_relative_bias = (
+            config.get("position_encoding", "learned") == "relative"
+        )
+        self.rel_pos_bias = (
+            RelativePositionBias(
+                config["encoder_attention_heads"], config["max_position_embeddings"]
+            )
+            if self.use_relative_bias
+            else None
         )
 
         self.layers = nn.ModuleList(
-            [EncoderLayer(config) for _ in range(config["encoder_layers"])]
+            [
+                EncoderLayer({**config, "rel_pos_bias": self.rel_pos_bias})
+                for _ in range(config["encoder_layers"])
+            ]
         )
 
         self.layernorm_embedding = nn.LayerNorm(embed_dim)
@@ -96,6 +112,5 @@ class Encoder(nn.Module):
             )
             if return_attn_map:
                 attn_maps.append(attn_map)
-
 
         return hidden_states, attn_maps[-1] if return_attn_map else None

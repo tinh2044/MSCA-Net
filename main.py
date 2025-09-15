@@ -290,6 +290,16 @@ def main(args, cfg):
             tokenizer=gloss_tokenizer,
             log_file=log_file,
         )
+        dev_results = evaluate_fn(
+            args,
+            dev_dataloader,
+            model,
+            epoch,
+            beam_size=5,
+            print_freq=args.print_freq,
+            tokenizer=gloss_tokenizer,
+            log_file=log_file,
+        )
         if min_wer > test_results["wer"]:
             min_wer = test_results["wer"]
             checkpoint_paths = [output_dir / "best_checkpoint.pth"]
@@ -304,10 +314,11 @@ def main(args, cfg):
                     checkpoint_path,
                 )
         print(f"Test wer {test_results['wer']:.3f}, Min Test WER {min_wer}")
-
+        print(f"Dev wer {dev_results['wer']:.3f}, Min Dev WER {min_wer}")
         log_results = {
             **{f"train_{k}": v for k, v in train_results.items()},
             **{f"test_{k}": v for k, v in test_results.items()},
+            **{f"dev_{k}": v for k, v in dev_results.items()},
             "epoch": epoch,
             "n_parameters": n_parameters,
         }

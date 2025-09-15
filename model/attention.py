@@ -3,12 +3,15 @@ from torch import nn
 
 
 class BaseAttention(nn.Module):
-    def __init__(self, d_model, num_heads, dropout=0.0, bias=True):
+    def __init__(
+        self, d_model, num_heads, dropout=0.0, bias=True, relative_position_bias=None
+    ):
         super().__init__()
         self.d_model = d_model
         self.num_heads = num_heads
         self.dropout = dropout
         self.head_dim = d_model // num_heads
+        self.rel_pos_bias = relative_position_bias
 
         if (self.head_dim * num_heads) != self.d_model:
             raise ValueError(
@@ -24,8 +27,16 @@ class BaseAttention(nn.Module):
 
 
 class SelfAttention(BaseAttention):
-    def __init__(self, d_model, num_heads, dropout=0.0, bias=True):
-        super().__init__(d_model, num_heads, dropout=0.0, bias=True)
+    def __init__(
+        self, d_model, num_heads, dropout=0.0, bias=True, relative_position_bias=None
+    ):
+        super().__init__(
+            d_model,
+            num_heads,
+            dropout=0.0,
+            bias=True,
+            relative_position_bias=relative_position_bias,
+        )
         self.d_model = d_model
         self.num_heads = num_heads
         self.dropout = dropout
@@ -59,6 +70,12 @@ class SelfAttention(BaseAttention):
 
         attn_weights = torch.matmul(query_states, key_states.transpose(-1, -2))
 
+        if self.rel_pos_bias is not None:
+            rel_bias = self.rel_pos_bias(tgt_len, tgt_len, hidden_states.device).to(
+                attn_weights.dtype
+            )
+            attn_weights = attn_weights + rel_bias
+
         attn_weights += attention_mask
 
         attn_weights = nn.functional.softmax(attn_weights, dim=-1)
@@ -78,8 +95,16 @@ class SelfAttention(BaseAttention):
 
 
 class CrossAttention(BaseAttention):
-    def __init__(self, d_model, num_heads, dropout=0.0, bias=True):
-        super().__init__(d_model, num_heads, dropout=0.0, bias=True)
+    def __init__(
+        self, d_model, num_heads, dropout=0.0, bias=True, relative_position_bias=None
+    ):
+        super().__init__(
+            d_model,
+            num_heads,
+            dropout=0.0,
+            bias=True,
+            relative_position_bias=relative_position_bias,
+        )
         self.d_model = d_model
         self.num_heads = num_heads
         self.dropout = dropout
@@ -121,6 +146,12 @@ class CrossAttention(BaseAttention):
 
         attn_weights = torch.matmul(query_states, key_states.transpose(-1, -2))
 
+        if self.rel_pos_bias is not None:
+            rel_bias = self.rel_pos_bias(tgt_len, src_len, hidden_states.device).to(
+                attn_weights.dtype
+            )
+            attn_weights = attn_weights + rel_bias
+
         attn_weights += attention_mask
 
         attn_weights = nn.functional.softmax(attn_weights, dim=-1)
@@ -140,8 +171,16 @@ class CrossAttention(BaseAttention):
 
 
 class SelfCausalAttention(BaseAttention):
-    def __init__(self, d_model, num_heads, dropout=0.0, bias=True):
-        super().__init__(d_model, num_heads, dropout=0.0, bias=True)
+    def __init__(
+        self, d_model, num_heads, dropout=0.0, bias=True, relative_position_bias=None
+    ):
+        super().__init__(
+            d_model,
+            num_heads,
+            dropout=0.0,
+            bias=True,
+            relative_position_bias=relative_position_bias,
+        )
         self.d_model = d_model
         self.num_heads = num_heads
         self.dropout = dropout
@@ -178,6 +217,12 @@ class SelfCausalAttention(BaseAttention):
         ).view(1, 1, tgt_len, tgt_len)
         attn_weights = torch.matmul(query_states, key_states.transpose(-1, -2))
         attn_weights = attn_weights.masked_fill(causal_mask == 0, float("-inf"))
+
+        if self.rel_pos_bias is not None:
+            rel_bias = self.rel_pos_bias(tgt_len, tgt_len, hidden_states.device).to(
+                attn_weights.dtype
+            )
+            attn_weights = attn_weights + rel_bias
 
         attn_weights += attention_mask
 

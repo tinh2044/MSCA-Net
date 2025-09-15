@@ -42,14 +42,13 @@ class RecognitionHead(nn.Module):
         left_logits = self.left_gloss_classifier(left_output)
         right_logits = self.right_gloss_classifier(right_output)
         body_logits = self.body_gloss_classifier(body_output)
-        fuse_coord_logits = self.fuse_coord_classifier(fuse_output)
+        gloss_logits = self.fuse_coord_classifier(fuse_output)
 
         outputs = {
-            "alignment_gloss_logits": fuse_coord_logits,
             "left": left_logits,
             "right": right_logits,
             "body": body_logits,
-            "fuse_coord_gloss_logits": fuse_coord_logits,
+            "gloss_logits": gloss_logits,
         }
         return outputs
 
@@ -165,29 +164,18 @@ class MSCA_Net(torch.nn.Module):
         if return_attention_maps:
             outputs["attention_data"] = attention_data
 
-        outputs["fuse_coord_loss"] = self.compute_loss(
+        outputs["fuse_loss"] = self.compute_loss(
             labels=src_input["gloss_labels"],
             tgt_lengths=src_input["gloss_lengths"],
-            logits=outputs["fuse_coord_gloss_logits"],
+            logits=outputs["gloss_logits"],
             input_lengths=outputs["input_lengths"],
         )
 
-        if torch.isnan(outputs["fuse_coord_loss"]) or torch.isinf(
-            outputs["fuse_coord_loss"]
-        ):
-            print(f"Fuse coord loss value: {outputs['fuse_coord_loss']}")
-            print(
-                f"Fuse coord logits stats: min={outputs['fuse_coord_gloss_logits'].min()}, max={outputs['fuse_coord_gloss_logits'].max()}"
-            )
-            print(f"Input lengths: {outputs['input_lengths']}")
-            print(f"Target lengths: {src_input['gloss_lengths']}")
-            raise ValueError("NaN or inf in fuse_coord_loss")
-
-        outputs["total_loss"] += outputs["fuse_coord_loss"]
+        outputs["total_loss"] += outputs["fuse_loss"]
 
         if self.self_distillation:
             for student, weight in self.cfg["distillation_weight"].items():
-                teacher_logits = outputs["fuse_coord_gloss_logits"]
+                teacher_logits = outputs["gloss_logits"]
                 teacher_logits = teacher_logits.detach()
                 student_logits = outputs[f"{student}"]
 
@@ -217,42 +205,60 @@ class MSCA_Net(torch.nn.Module):
         return outputs
 
     def compute_loss(self, labels, tgt_lengths, logits, input_lengths):
-        try:
-            logits = logits.permute(1, 0, 2)
+        logits = logits.permute(1, 0, 2)
 
-            log_probs = F.log_softmax(logits, dim=-1)
+        log_probs = F.log_softmax(logits, dim=-1)
 
-            log_probs = torch.clamp(log_probs, min=-100, max=0)
+        log_probs = torch.clamp(log_probs, min=-100, max=0)
 
-            if torch.isnan(log_probs).any():
-                raise ValueError("NaN in log_probs")
-            if torch.isinf(log_probs).any():
-                raise ValueError("inf in log_probs")
+        if torch.isnan(log_probs).any():
+            raise ValueError("NaN in log_probs")
+        if torch.isinf(log_probs).any():
+            raise ValueError("inf in log_probs")
 
-            input_lengths = torch.clamp(input_lengths, min=1)
-            tgt_lengths = torch.clamp(tgt_lengths, min=1)
+        input_lengths = torch.clamp(input_lengths, min=1)
+        tgt_lengths = torch.clamp(tgt_lengths, min=1)
 
-            input_lengths = torch.maximum(input_lengths, tgt_lengths)
+        input_lengths = torch.maximum(input_lengths, tgt_lengths)
 
-            loss = self.loss_fn(
-                log_probs,
-                labels.cpu().int(),
-                input_lengths.cpu().int(),
-                tgt_lengths.cpu().int(),
-            )
+        loss = self.loss_fn(
+            log_probs,
+            labels.cpu().int(),
+            input_lengths.cpu().int(),
+            tgt_lengths.cpu().int(),
+        )
 
-            valid_loss_mask = torch.isfinite(loss)
-            if valid_loss_mask.sum() == 0:
-                return torch.tensor(0.0, device=logits.device, requires_grad=True)
+        valid_loss_mask = torch.isfinite(loss)
+        if valid_loss_mask.sum() == 0:
+            return torch.tensor(0.0, device=logits.device, requires_grad=True)
 
-            loss = loss[valid_loss_mask].mean()
-
-        except Exception as e:
-            print(f"Error in CTC loss: {str(e)}")
-            print(f"Logits shape: {logits.shape}")
-            print(f"Labels shape: {labels.shape}")
-            print(f"Input lengths: {input_lengths}")
-            print(f"Target lengths: {tgt_lengths}")
-            raise e
+        loss = loss[valid_loss_mask].mean()
 
         return loss
+
+    def interface(self, keypoints, mask):
+        body_embed, _ = self.body_encoder(
+            keypoints[:, :, self.cfg["body_idx"], :],
+            mask,
+            return_attn_map=False,
+        )
+        left_embed, _ = self.left_encoder(
+            keypoints[:, :, self.cfg["left_idx"], :],
+            mask,
+            return_attn_map=False,
+        )
+        right_embed, _ = self.right_encoder(
+            keypoints[:, :, self.cfg["right_idx"], :],
+            mask,
+            return_attn_map=False,
+        )
+
+        fuse_embed = self.coordinates_fusion(
+            left_embed, right_embed, body_embed
+        )  # (B,T/4, D)
+
+        head_outputs = self.recognition_head(
+            left_embed, right_embed, fuse_embed, body_embed
+        )
+
+        return head_outputs
