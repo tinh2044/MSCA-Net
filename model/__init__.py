@@ -7,21 +7,13 @@ import torch.nn.functional as F
 
 
 class RecognitionHead(nn.Module):
-    def __init__(self, cfg, gloss_tokenizer):
+    def __init__(self, cfg, num_classes=None):
         super().__init__()
 
-        self.left_gloss_classifier = nn.Linear(
-            cfg["residual_blocks"][-1], len(gloss_tokenizer)
-        )
-        self.right_gloss_classifier = nn.Linear(
-            cfg["residual_blocks"][-1], len(gloss_tokenizer)
-        )
-        self.body_gloss_classifier = nn.Linear(
-            cfg["residual_blocks"][-1], len(gloss_tokenizer)
-        )
-        self.fuse_coord_classifier = nn.Linear(
-            cfg["out_fusion_dim"], len(gloss_tokenizer)
-        )
+        self.left_gloss_classifier = nn.Linear(cfg["residual_blocks"][-1], num_classes)
+        self.right_gloss_classifier = nn.Linear(cfg["residual_blocks"][-1], num_classes)
+        self.body_gloss_classifier = nn.Linear(cfg["residual_blocks"][-1], num_classes)
+        self.fuse_coord_classifier = nn.Linear(cfg["out_fusion_dim"], num_classes)
 
         self._init_weights()
 
@@ -54,15 +46,21 @@ class RecognitionHead(nn.Module):
 
 
 class MSCA_Net(torch.nn.Module):
-    def __init__(self, cfg, gloss_tokenizer, device="cpu"):
+    def __init__(self, cfg, device="cpu", num_classes=None):
         super().__init__()
         self.device = device
         self.cfg = cfg
+        self.num_classes = num_classes
         self.cfg["fuse_idx"] = cfg["left_idx"] + cfg["right_idx"] + cfg["body_idx"]
         self.left_idx = cfg["left_idx"]
-        self.gloss_tokenizer = gloss_tokenizer
+
+        self.task = cfg.get("task", "continuous")
+
+        self.islr_pooling = cfg.get("islr_pooling", "mean")
+        self.islr_head = cfg.get("islr_head", "fuse")
 
         self.self_distillation = cfg["self_distillation"]
+        self.distillation_on_islr = cfg.get("distillation_on_islr", True)
 
         self.gradient_clip_val = cfg.get("gradient_clip_val", 1.0)
 
@@ -78,10 +76,12 @@ class MSCA_Net(torch.nn.Module):
         self.coordinates_fusion = CoordinatesFusion(
             cfg["in_fusion_dim"], cfg["out_fusion_dim"], 0.2
         )
-        self.recognition_head = RecognitionHead(cfg, gloss_tokenizer)
+        self.recognition_head = RecognitionHead(cfg, num_classes=num_classes)
 
         self.loss_fn = nn.CTCLoss(reduction="none", zero_infinity=True, blank=0)
         self.distillation_loss = SeqKD()
+
+        self.isolated_ce = nn.CrossEntropyLoss(reduction="mean")
 
         self._init_weights()
 
@@ -139,70 +139,163 @@ class MSCA_Net(torch.nn.Module):
         if torch.isnan(right_embed).any() or torch.isinf(right_embed).any():
             raise ValueError("NaN or inf in right_embed")
 
-        fuse_embed = self.coordinates_fusion(
-            left_embed, right_embed, body_embed
-        )  # (B,T/4, D)
+        if return_attention_maps:
+            fuse_embed, fusion_attn_data = self.coordinates_fusion(
+                left_embed, right_embed, body_embed, return_attn_map=True
+            )
+        else:
+            fuse_embed = self.coordinates_fusion(
+                left_embed, right_embed, body_embed, return_attn_map=False
+            )
 
         if torch.isnan(fuse_embed).any() or torch.isinf(fuse_embed).any():
             raise ValueError("NaN or inf in fuse_embed")
 
-        head_outputs = self.recognition_head(
-            left_embed, right_embed, fuse_embed, body_embed
-        )
+        if self.task == "isolated":
+            head_outputs = self.recognition_head(
+                left_embed, right_embed, fuse_embed, body_embed
+            )
 
-        for k, v in head_outputs.items():
-            if torch.isnan(v).any():
-                raise ValueError(f"NaN in {k}")
-            if torch.isinf(v).any():
-                raise ValueError(f"inf in {k}")
-        outputs = {
-            **head_outputs,
-            "input_lengths": src_input["valid_len_in"],
-            "total_loss": 0,
-        }
+            for k, v in head_outputs.items():
+                if torch.isnan(v).any():
+                    raise ValueError(f"NaN in {k}")
+                if torch.isinf(v).any():
+                    raise ValueError(f"inf in {k}")
 
-        if return_attention_maps:
-            outputs["attention_data"] = attention_data
+            def pool_time(x):
+                if self.islr_pooling == "max":
+                    return torch.amax(x, dim=1)
+                return torch.mean(x, dim=1)
 
-        outputs["fuse_loss"] = self.compute_loss(
-            labels=src_input["gloss_labels"],
-            tgt_lengths=src_input["gloss_lengths"],
-            logits=outputs["gloss_logits"],
-            input_lengths=outputs["input_lengths"],
-        )
+            if self.islr_head == "left":
+                isolated_logits = pool_time(head_outputs["left"])
+            elif self.islr_head == "right":
+                isolated_logits = pool_time(head_outputs["right"])
+            elif self.islr_head == "body":
+                isolated_logits = pool_time(head_outputs["body"])
+            else:
+                isolated_logits = pool_time(head_outputs["gloss_logits"])
 
-        outputs["total_loss"] += outputs["fuse_loss"]
+            outputs = {
+                **head_outputs,
+                "isolated_logits": isolated_logits,
+                "total_loss": 0,
+            }
 
-        if self.self_distillation:
-            for student, weight in self.cfg["distillation_weight"].items():
-                teacher_logits = outputs["gloss_logits"]
-                teacher_logits = teacher_logits.detach()
-                student_logits = outputs[f"{student}"]
+            if "gloss_label_isolated" in src_input:
+                labels_isolated = src_input["gloss_label_isolated"].long()
+            elif "gloss_labels" in src_input and src_input["gloss_labels"].ndim == 1:
+                labels_isolated = src_input["gloss_labels"].long()
+            else:
+                labels_isolated = src_input["gloss_labels"][:, 0].long()
 
-                if torch.isnan(student_logits).any():
-                    raise ValueError(f"NaN in student_logits for {student}")
+            isolated_loss = self.compute_isolated_loss(
+                logits=isolated_logits, labels=labels_isolated
+            )
+            outputs["isolated_loss"] = isolated_loss
+            outputs["total_loss"] += isolated_loss
 
-                if torch.isnan(teacher_logits).any():
-                    raise ValueError(f"NaN in teacher_logits for {student}")
+            if self.self_distillation and self.distillation_on_islr:
+                teacher_logits = isolated_logits.detach()
+                for student, weight in self.cfg["distillation_weight"].items():
+                    student_seq_logits = head_outputs[
+                        "left"
+                        if student == "left"
+                        else (
+                            "right"
+                            if student == "right"
+                            else ("body" if student == "body" else "gloss_logits")
+                        )
+                    ]
+                    student_logits = pool_time(student_seq_logits)
 
-                distill_loss = weight * self.distillation_loss(
-                    student_logits, teacher_logits, use_blank=False
-                )
+                    if torch.isnan(student_logits).any():
+                        raise ValueError(f"NaN in student_logits for {student}")
+                    if torch.isnan(teacher_logits).any():
+                        raise ValueError(f"NaN in teacher_logits for {student}")
 
-                distill_loss = torch.clamp(distill_loss, min=-100, max=100)
-                outputs[f"{student}_distill_loss"] = distill_loss
-
-                if torch.isnan(outputs[f"{student}_distill_loss"]) or torch.isinf(
-                    outputs[f"{student}_distill_loss"]
-                ):
-                    print(
-                        f"Distillation loss for {student}: {outputs[f'{student}_distill_loss']}"
+                    distill_loss = weight * self.distillation_loss(
+                        student_logits.unsqueeze(0),
+                        teacher_logits.unsqueeze(0),
+                        use_blank=False,
                     )
-                    raise ValueError(f"NaN or inf in {student}_distill_loss")
+                    distill_loss = torch.clamp(distill_loss, min=-100, max=100)
+                    outputs[f"{student}_distill_loss"] = distill_loss
 
-                outputs["total_loss"] += outputs[f"{student}_distill_loss"]
+                    if torch.isnan(outputs[f"{student}_distill_loss"]) or torch.isinf(
+                        outputs[f"{student}_distill_loss"]
+                    ):
+                        print(
+                            f"Distillation loss for {student}: {outputs[f'{student}_distill_loss']}"
+                        )
+                        raise ValueError(f"NaN or inf in {student}_distill_loss")
 
-        return outputs
+                    outputs["total_loss"] += outputs[f"{student}_distill_loss"]
+
+            if return_attention_maps:
+                attention_data["fusion_attention_data"] = fusion_attn_data
+                outputs["attention_data"] = attention_data
+
+            return outputs
+        else:  # Continuous
+            head_outputs = self.recognition_head(
+                left_embed, right_embed, fuse_embed, body_embed
+            )
+
+            for k, v in head_outputs.items():
+                if torch.isnan(v).any():
+                    raise ValueError(f"NaN in {k}")
+                if torch.isinf(v).any():
+                    raise ValueError(f"inf in {k}")
+            outputs = {
+                **head_outputs,
+                "input_lengths": src_input["valid_len_in"],
+                "total_loss": 0,
+            }
+
+            if return_attention_maps:
+                attention_data["fusion_attention_data"] = fusion_attn_data
+                outputs["attention_data"] = attention_data
+
+            outputs["fuse_loss"] = self.compute_loss(
+                labels=src_input["gloss_labels"],
+                tgt_lengths=src_input["gloss_lengths"],
+                logits=outputs["gloss_logits"],
+                input_lengths=outputs["input_lengths"],
+            )
+
+            outputs["total_loss"] += outputs["fuse_loss"]
+
+            if self.self_distillation:
+                for student, weight in self.cfg["distillation_weight"].items():
+                    teacher_logits = outputs["gloss_logits"]
+                    teacher_logits = teacher_logits.detach()
+                    student_logits = outputs[f"{student}"]
+
+                    if torch.isnan(student_logits).any():
+                        raise ValueError(f"NaN in student_logits for {student}")
+
+                    if torch.isnan(teacher_logits).any():
+                        raise ValueError(f"NaN in teacher_logits for {student}")
+
+                    distill_loss = weight * self.distillation_loss(
+                        student_logits, teacher_logits, use_blank=False
+                    )
+
+                    distill_loss = torch.clamp(distill_loss, min=-100, max=100)
+                    outputs[f"{student}_distill_loss"] = distill_loss
+
+                    if torch.isnan(outputs[f"{student}_distill_loss"]) or torch.isinf(
+                        outputs[f"{student}_distill_loss"]
+                    ):
+                        print(
+                            f"Distillation loss for {student}: {outputs[f'{student}_distill_loss']}"
+                        )
+                        raise ValueError(f"NaN or inf in {student}_distill_loss")
+
+                    outputs["total_loss"] += outputs[f"{student}_distill_loss"]
+
+            return outputs
 
     def compute_loss(self, labels, tgt_lengths, logits, input_lengths):
         logits = logits.permute(1, 0, 2)
@@ -236,6 +329,14 @@ class MSCA_Net(torch.nn.Module):
 
         return loss
 
+    def compute_isolated_loss(self, logits, labels):
+        if torch.isnan(logits).any() or torch.isinf(logits).any():
+            raise ValueError("NaN or inf in isolated logits")
+        loss = self.isolated_ce(logits, labels)
+        if torch.isnan(loss) or torch.isinf(loss):
+            raise ValueError("NaN or inf in isolated loss")
+        return loss
+
     def interface(self, keypoints, mask):
         body_embed, _ = self.body_encoder(
             keypoints[:, :, self.cfg["body_idx"], :],
@@ -253,12 +354,28 @@ class MSCA_Net(torch.nn.Module):
             return_attn_map=False,
         )
 
-        fuse_embed = self.coordinates_fusion(
-            left_embed, right_embed, body_embed
-        )  # (B,T/4, D)
+        fuse_embed = self.coordinates_fusion(left_embed, right_embed, body_embed)
 
         head_outputs = self.recognition_head(
             left_embed, right_embed, fuse_embed, body_embed
         )
+
+        if self.task == "isolated":
+
+            def pool_time(x):
+                if self.islr_pooling == "max":
+                    return torch.amax(x, dim=1)
+                return torch.mean(x, dim=1)
+
+            if self.islr_head == "left":
+                isolated_logits = pool_time(head_outputs["left"])
+            elif self.islr_head == "right":
+                isolated_logits = pool_time(head_outputs["right"])
+            elif self.islr_head == "body":
+                isolated_logits = pool_time(head_outputs["body"])
+            else:
+                isolated_logits = pool_time(head_outputs["gloss_logits"])
+
+            return {**head_outputs, "isolated_logits": isolated_logits}
 
         return head_outputs

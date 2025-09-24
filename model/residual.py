@@ -139,10 +139,5 @@ if __name__ == "__main__":
 
     final_output, intermediate_outputs = model(input_tensor)
 
-    torch.save(model.state_dict(), "ResidualNetwork.pth")
-
-    print(f"Input shape: {input_tensor.shape}")
-    print(f"Final output shape: {final_output.shape}")
-    print("Intermediate output shapes:")
     for i, output in enumerate(intermediate_outputs):
-        print(f"  Block {i + 1}: {output.shape}")
+        print(f" Block {i + 1}: {output.shape}")

@@ -18,7 +18,9 @@ class CoordinatesFusion(nn.Module):
         self.inverted_res = InvertedResidual(out_feat, out_feat)
         self.drop_rate = drop_rate
 
-    def forward(self, left_embed, right_embed, body_embed):
+    def forward(
+        self, left_embed, right_embed, body_embed, return_attn_map: bool = False
+    ):
         left_out = self.left_se(left_embed)
         left_out = self.gelu(left_out)
 
@@ -37,6 +39,8 @@ class CoordinatesFusion(nn.Module):
         fuse = self.norm(fuse)
         fuse = self.inverted_res(fuse)
         fuse = F.dropout(fuse, self.drop_rate, training=self.training)
+        if return_attn_map:
+            return fuse, {"fusion_attn_maps": attn_weight}
         return fuse
 
 

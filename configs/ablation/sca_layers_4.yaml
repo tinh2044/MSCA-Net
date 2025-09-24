@@ -1,6 +1,5 @@
 data:
-  dataset_name: Phoenix-2014
-  input_streams: keypoint
+  dataset_name: Phoenix-2014-T
   joint_parts:
     - - 11
       - 12
@@ -54,26 +53,26 @@ data:
   max_len: 128
   max_sent_length: 128
   normalize: true
-  root: ./data/Phoenix-2014
+  root: ./data/Phoenix-2014-T
   shuffle: true
 device: cpu
 gloss_tokenizer:
-  gloss2id_file: ./data/Phoenix-2014/gloss2ids.json
+  gloss2id_file: ./data/Phoenix-2014-T/gloss2ids.json
   split: " "
 testing:
   recognition:
     beam_size: 5
 training:
-  model_dir: ./outputs_Phoenix-2014
+  model_dir: ./outputs_Phoenix-2014-T/ablation/sca_layers_4
   optimization:
     betas:
       - 0.9
       - 0.998
     learning_rate:
-      default: 0.0002
+      default: 0.002
     optimizer: Adam
-    scheduler: warmupcosineannealing
-    total_epochs: 200
+    scheduler: cosineannealing
+    total_epochs: 100
     warmup_ratio: 0.2
     eta_min: 0.0001
     weight_decay: 2.0e-05
@@ -85,7 +84,6 @@ model:
   dropout: 0.2
   attention_heads: 16
   ff_dim: 768
-  attn_layers: 8
   num_frame: 180
   max_position_embeddings: 256
   decoder_attention_heads: 16
@@ -100,12 +98,9 @@ model:
   residual_blocks: [128, 128, 256, 512]
   in_fusion_dim: 512
   out_fusion_dim: 1024
-  alignment_module:
-    input_size: 1024
-    hidden_size: 1024
-    num_layers: 1
-    dropout: 0.3
-    bidirectional: True
+
+  position_encoding: learned
+  coord_mapping: independent
 
   body_idx:
     - 11
@@ -168,3 +163,5 @@ model:
     left: 1.0
     right: 1.0
     body: 1.0
+
+

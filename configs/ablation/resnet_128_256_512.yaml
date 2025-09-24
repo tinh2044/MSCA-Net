@@ -1,0 +1,167 @@
+data:
+  dataset_name: Phoenix-2014-T
+  joint_parts:
+    - - 11
+      - 12
+      - 13
+      - 14
+      - 15
+      - 16
+    - - 33
+      - 34
+      - 35
+      - 36
+      - 37
+      - 38
+      - 39
+      - 40
+      - 41
+      - 42
+      - 43
+      - 44
+      - 45
+      - 46
+      - 47
+      - 48
+      - 49
+      - 50
+      - 51
+      - 52
+      - 53
+    - - 54
+      - 55
+      - 56
+      - 57
+      - 58
+      - 59
+      - 60
+      - 61
+      - 62
+      - 63
+      - 64
+      - 65
+      - 66
+      - 67
+      - 68
+      - 69
+      - 70
+      - 71
+      - 72
+      - 73
+      - 74
+  lowercase: false
+  max_len: 128
+  max_sent_length: 128
+  normalize: true
+  root: ./data/Phoenix-2014-T
+  shuffle: true
+device: cpu
+gloss_tokenizer:
+  gloss2id_file: ./data/Phoenix-2014-T/gloss2ids.json
+  split: " "
+testing:
+  recognition:
+    beam_size: 5
+training:
+  model_dir: ./outputs_Phoenix-2014-T/ablation/resnet_128_256_512
+  optimization:
+    betas:
+      - 0.9
+      - 0.998
+    learning_rate:
+      default: 0.002
+    optimizer: Adam
+    scheduler: cosineannealing
+    total_epochs: 100
+    warmup_ratio: 0.2
+    eta_min: 0.0001
+    weight_decay: 2.0e-05
+
+model:
+  activation_dropout: 0.0
+  attention_dropout: 0.0
+  d_model: 128
+  dropout: 0.2
+  attention_heads: 16
+  ff_dim: 768
+  num_frame: 180
+  max_position_embeddings: 256
+  decoder_attention_heads: 16
+  decoder_ffn_dim: 512
+  decoder_layerdrop: 0.2
+  decoder_layers: 4
+  dropout: 0.2
+  encoder_attention_heads: 16
+  encoder_ffn_dim: 512
+  encoder_layerdrop: 0.2
+  encoder_layers: 4
+  residual_blocks: [128, 256, 512]
+  in_fusion_dim: 512
+  out_fusion_dim: 1024
+
+  position_encoding: learned
+  coord_mapping: independent
+
+  body_idx:
+    - 11
+    - 12
+    - 13
+    - 14
+    - 15
+    - 16
+  right_idx:
+    - 54
+    - 55
+    - 56
+    - 57
+    - 58
+    - 59
+    - 60
+    - 61
+    - 62
+    - 63
+    - 64
+    - 65
+    - 66
+    - 67
+    - 68
+    - 69
+    - 70
+    - 71
+    - 72
+    - 73
+    - 74
+  left_idx:
+    - 33
+    - 34
+    - 35
+    - 36
+    - 37
+    - 38
+    - 39
+    - 40
+    - 41
+    - 42
+    - 43
+    - 44
+    - 45
+    - 46
+    - 47
+    - 48
+    - 49
+    - 50
+    - 51
+    - 52
+    - 53
+
+  fuse_alignment:
+    input_size: 1024
+    hidden_size: 1024
+
+  self_distillation: True
+  distillation_weight:
+    left: 1.0
+    right: 1.0
+    body: 1.0
+
+

@@ -9,7 +9,7 @@ model/__pycache__/
 /f.py
 output*/
 tests/
-tools/
+scripts/
 .qodo
 logs/
 results/
@@ -34,3 +34,5 @@ logs/
 attention_maps/
 attention_maps.json
 web/
+./small_dataset/
+./trajectory_plots/
