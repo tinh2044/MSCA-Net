@@ -113,15 +113,31 @@ def build_scheduler(
             "validation",
         )
     elif scheduler_name == "cosineannealing":
-        return (
-            lr_scheduler.CosineAnnealingLR(
-                optimizer=optimizer,
-                eta_min=config.get("eta_min", 0),
-                T_max=config.get("t_max", 200),
-                last_epoch=last_epoch,
-            ),
-            "epoch",
-        )
+        # Check if warmup_ratio is specified, if so use warmupcosineannealing
+        if "warmup_ratio" in config:
+            total_epochs = config.get("total_epochs", 100)
+            warmup_ratio = config.get("warmup_ratio", 0.2)
+            eta_min = config.get("eta_min", 0)
+            return (
+                WarmupCosineAnnealingScheduler(
+                    optimizer=optimizer,
+                    total_epochs=total_epochs,
+                    warmup_ratio=warmup_ratio,
+                    eta_min=eta_min,
+                    last_epoch=last_epoch,
+                ),
+                "epoch",
+            )
+        else:
+            return (
+                lr_scheduler.CosineAnnealingLR(
+                    optimizer=optimizer,
+                    eta_min=config.get("eta_min", 0),
+                    T_max=config.get("t_max", 200),
+                    last_epoch=last_epoch,
+                ),
+                "epoch",
+            )
     elif scheduler_name == "warmupcosineannealing":
         total_epochs = config.get("total_epochs", 100)
         warmup_ratio = config.get("warmup_ratio", 0.2)

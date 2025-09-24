@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import pickle
 from typing import List, Tuple
 
 import numpy as np
@@ -120,7 +121,7 @@ def run_inference(
     cfg_path: str,
     checkpoint_path: str,
     device: str = "cpu",
-    beam_size: int = None,
+    beam_size: int = 5,
     output_path: str = None,
 ) -> dict:
     if not os.path.exists(video_path):

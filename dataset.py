@@ -43,7 +43,7 @@ class SLR_Dataset(Dataset.Dataset):
         with open(path, "rb") as f:
             sample = pickle.load(f)
 
-        keypoints = sample["keypoints"][:, :, :]
+        keypoints = sample["keypoints"][:, :, :2]
         gloss = sample["gloss"].replace("  ", " ").strip()
         if "name" in sample:
             name = sample["name"]
@@ -212,3 +212,134 @@ class SLR_Dataset(Dataset.Dataset):
                 f"len(frames_idx) = {len(frames_idx)} != {tgt_len}"
             )
             return keypoints[frames_idx]
+
+
+class ISLR_Dataset(SLR_Dataset):
+    def __init__(self, root, cfg, split):
+        self.cfg = cfg
+        self.max_len = cfg["max_len"]
+        self.split = split
+        self.normalize = cfg["normalize"]
+        self.joint_parts = cfg["joint_parts"]
+
+        split_dir = f"{root}/{split}"
+        assert os.path.exists(split_dir), f"Path {split_dir} does not exist"
+
+        class_names = [
+            d
+            for d in os.listdir(split_dir)
+            if os.path.isdir(os.path.join(split_dir, d))
+        ]
+        assert len(class_names) > 0, f"No class folders found under {split_dir}"
+        class_names.sort()
+        self.class_to_id = {name: idx for idx, name in enumerate(class_names)}
+        self.id_to_class = {idx: name for name, idx in self.class_to_id.items()}
+
+        samples = []
+        for cls_name in class_names:
+            cls_dir = os.path.join(split_dir, cls_name)
+            for fname in os.listdir(cls_dir):
+                fpath = os.path.join(cls_dir, fname)
+                if os.path.isfile(fpath) and (
+                    fname.endswith(".pkl") or fname.endswith(".pickle")
+                ):
+                    samples.append((fpath, self.class_to_id[cls_name], cls_name))
+        assert len(samples) > 0, (
+            f"No .pkl samples found under class folders in {split_dir}"
+        )
+
+        if cfg["shuffle"] is True:
+            random.shuffle(samples)
+
+        self.samples = samples
+
+        if self.split == "train":
+            self.min_rate = 0.5
+            self.max_rate = 1.5
+        else:
+            self.min_rate = 1.0
+            self.max_rate = 1.0
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        fpath, class_id, class_name = self.samples[idx]
+        with open(fpath, "rb") as f:
+            sample = pickle.load(f)
+
+        keypoints = sample["keypoints"][:, :, :2]
+
+        name = os.path.basename(fpath)
+
+        return keypoints, class_id, class_name, name
+
+    def data_collator(self, batch):
+        (
+            keypoints_batch,
+            length_keypoints_batch,
+            class_id_batch,
+            class_name_batch,
+            name_batch,
+        ) = (
+            [],
+            [],
+            [],
+            [],
+            [],
+        )
+
+        for keypoints, class_id, class_name, name in batch:
+            keypoints = self.preprocess_keypoints(keypoints)
+            keypoints = torch.from_numpy(keypoints).float()
+
+            length_keypoints_batch.append(keypoints.shape[0])
+            keypoints_batch.append(keypoints)
+            class_id_batch.append(class_id)
+            class_name_batch.append(class_name)
+            name_batch.append(name)
+
+        padding_keypoints_batch = []
+        max_len = max(length_keypoints_batch)
+
+        for keypoints, length_keypoints in zip(keypoints_batch, length_keypoints_batch):
+            if length_keypoints < max_len:
+                padding = torch.zeros(
+                    (max_len - length_keypoints, keypoints.shape[1], keypoints.shape[2])
+                )
+                keypoints = torch.cat((keypoints, padding), dim=0)
+                padding_keypoints_batch.append(keypoints)
+            else:
+                padding_keypoints_batch.append(keypoints)
+
+        keypoints_batch = torch.stack(padding_keypoints_batch)
+        length_keypoints_batch = torch.tensor(length_keypoints_batch)
+
+        attention_mask = torch.zeros(
+            (keypoints_batch.shape[0], max_len), dtype=torch.long
+        )
+        for i in range(keypoints_batch.shape[0]):
+            attention_mask[i, : length_keypoints_batch[i]] = 1
+
+        new_src_lengths = (length_keypoints_batch // 4).long()
+        mask_head = torch.zeros(
+            (keypoints_batch.shape[0], max(new_src_lengths)), dtype=torch.long
+        )
+        for i in range(keypoints_batch.shape[0]):
+            mask_head[i, : new_src_lengths[i]] = 1
+
+        labels_isolated = torch.tensor(class_id_batch, dtype=torch.long)
+
+        src_input = {
+            "name": name_batch,
+            "keypoints": keypoints_batch,
+            "valid_len_in": new_src_lengths,
+            "mask": attention_mask,
+            "mask_head": mask_head,
+            "gloss_label_isolated": labels_isolated,
+            "gloss_labels": labels_isolated,
+            "gloss_lengths": torch.ones_like(labels_isolated),
+            "gloss_input": class_name_batch,
+        }
+
+        return src_input

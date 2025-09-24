@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import tensorflow as tf
 from itertools import groupby
-
+from thop import profile, clever_format
 import torch.distributed as dist
 
 total_body_idx = 33
@@ -65,9 +65,6 @@ def count_model_parameters(model):
 
 def calculate_flops(model, input_shape, device="cpu"):
     try:
-        from thop import profile, clever_format
-        import torch
-
         batch_size = input_shape.get("batch_size", 1)
         seq_len = input_shape.get("seq_len", 100)
         num_joints = input_shape.get("num_joints", 542)
@@ -107,11 +104,8 @@ def calculate_flops(model, input_shape, device="cpu"):
 
         return flops_info
 
-    except ImportError:
-        print("Warning: thop library not installed. Install with: pip install thop")
-        return None
     except Exception as e:
-        print(f"Error calculating FLOPs: {str(e)}")
+        print(e)
         return None
 
 
