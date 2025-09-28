@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from model.keypoint_module import KeypointModule
 from model.fusion import CoordinatesFusion
-from loss import SeqKD
+from model.loss import SeqKD
 import torch.nn.functional as F
 
 
