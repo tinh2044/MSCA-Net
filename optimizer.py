@@ -30,14 +30,20 @@ def build_optimizer(config, model):
     weight_decay = config.get("weight_decay", 0)
     eps = config.get("eps", 1.0e-8)
     parameters = []
-    base_lr = config["learning_rate"].pop("default")
-    base_lr = float(base_lr)
-    for n, p in model.named_children():
-        lr_ = base_lr
-        for m, lr in config["learning_rate"].items():
-            if m in n:
-                lr_ = lr
-        parameters.append({"params": p.parameters(), "lr": lr_})
+    lr_cfg = config.get("learning_rate", 1e-3)
+    if isinstance(lr_cfg, dict):
+        base_lr = float(lr_cfg.get("default", 1e-3))
+        overrides = {k: float(v) for k, v in lr_cfg.items() if k != "default"}
+    else:
+        base_lr = float(lr_cfg)
+        overrides = {}
+
+    for module_name, module in model.named_children():
+        module_lr = base_lr
+        for match_name, match_lr in overrides.items():
+            if match_name in module_name:
+                module_lr = match_lr
+        parameters.append({"params": module.parameters(), "lr": module_lr})
 
     betas = config.get("betas", (0.9, 0.999))
     amsgrad = config.get("amsgrad", False)
@@ -51,7 +57,7 @@ def build_optimizer(config, model):
             amsgrad=amsgrad,
         )
     elif optimizer_name == "adamw":
-        return torch.optim.Adam(
+        return torch.optim.AdamW(
             params=parameters,
             lr=base_lr,
             betas=betas,
@@ -112,12 +118,15 @@ def build_scheduler(
             ),
             "validation",
         )
-    elif scheduler_name == "cosineannealing":
-        # Check if warmup_ratio is specified, if so use warmupcosineannealing
-        if "warmup_ratio" in config:
-            total_epochs = config.get("total_epochs", 100)
-            warmup_ratio = config.get("warmup_ratio", 0.2)
-            eta_min = config.get("eta_min", 0)
+    elif scheduler_name in ["cosineannealing", "cosine"]:
+        # Prefer explicit warmup settings if provided
+        total_epochs = config.get("total_epochs", 100)
+        eta_min = config.get("eta_min", 0)
+        if "warmup_ratio" in config or "warmup_epochs" in config:
+            warmup_ratio = config.get(
+                "warmup_ratio",
+                float(config.get("warmup_epochs", 0)) / float(total_epochs or 1),
+            )
             return (
                 WarmupCosineAnnealingScheduler(
                     optimizer=optimizer,
@@ -132,8 +141,8 @@ def build_scheduler(
             return (
                 lr_scheduler.CosineAnnealingLR(
                     optimizer=optimizer,
-                    eta_min=config.get("eta_min", 0),
-                    T_max=config.get("t_max", 200),
+                    eta_min=eta_min,
+                    T_max=config.get("t_max", total_epochs),
                     last_epoch=last_epoch,
                 ),
                 "epoch",

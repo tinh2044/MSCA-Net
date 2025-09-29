@@ -1,0 +1,21 @@
+data:
+  root: ./VSL-video
+
+model:
+  type: i3d
+  num_classes: 10
+  pretrained: true
+  use_hub_i3d: true
+  num_frames: 32
+  img_size: 224
+
+training:
+  model_dir: outputs_I3D
+  optimization:
+    optimizer: adamw
+    learning_rate: 1e-4
+    weight_decay: 0.01
+    scheduler: cosine
+    warmup_epochs: 5
+
+

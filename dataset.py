@@ -1,11 +1,15 @@
+import os
 import random
+import pickle
+
+import cv2
+import glob
+import numpy as np
 
 import torch
-import utils as utils
 import torch.utils.data.dataset as Dataset
-import os
-import numpy as np
-import pickle
+import torchvision.transforms as T
+
 from augmentation import rotate_keypoints, flip_keypoints
 
 
@@ -343,3 +347,118 @@ class ISLR_Dataset(SLR_Dataset):
         }
 
         return src_input
+
+
+class ISLRVideoDataset(Dataset.Dataset):
+    def __init__(self, root, split, num_frames=32, size=224, shuffle=True):
+        super().__init__()
+        split_dir = os.path.join(root, split)
+        assert os.path.exists(split_dir), f"{split_dir} does not exist"
+
+        class_names = [
+            d
+            for d in os.listdir(split_dir)
+            if os.path.isdir(os.path.join(split_dir, d))
+        ]
+        class_names.sort()
+        self.class_to_id = {name: idx for idx, name in enumerate(class_names)}
+        self.id_to_class = {idx: name for name, idx in self.class_to_id.items()}
+
+        samples = []
+        for _cls in class_names:
+            cls_dir = os.path.join(split_dir, _cls)
+            for p in glob.glob(os.path.join(cls_dir, "*.mp4")):
+                samples.append((p, self.class_to_id[_cls], _cls))
+            for folder in [
+                d
+                for d in os.listdir(cls_dir)
+                if os.path.isdir(os.path.join(cls_dir, d))
+            ]:
+                frame_dir = os.path.join(cls_dir, folder)
+                if len(glob.glob(os.path.join(frame_dir, "*.jpg"))) > 0:
+                    samples.append((frame_dir, self.class_to_id[_cls], _cls))
+
+        assert len(samples) > 0, f"No videos folders found under {split_dir}"
+        if shuffle:
+            random.shuffle(samples)
+
+        self.samples = samples
+        self.split = split
+        self.num_frames = num_frames
+        self.size = size
+
+        self.train = split == "train"
+        self.resize = T.Resize((size, size))
+        self.to_tensor = T.ToTensor()
+        self.normalize = T.Normalize(
+            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+        )
+
+    def __len__(self):
+        return len(self.samples)
+
+    def _read_video(self, path):
+        cap = cv2.VideoCapture(path)
+        frames = []
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frames.append(frame)
+        cap.release()
+        return frames
+
+    def _read_frames_folder(self, frame_dir):
+        frame_paths = sorted(glob.glob(os.path.join(frame_dir, "*.jpg")))
+        frames = [cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB) for p in frame_paths]
+        return frames
+
+    def _sample_indices(self, n):
+        if n <= self.num_frames:
+            idx = list(range(n)) + [n - 1] * (self.num_frames - n)
+        else:
+            if self.train:
+                start = random.randint(0, n - self.num_frames)
+                idx = list(range(start, start + self.num_frames))
+            else:
+                start = (n - self.num_frames) // 2
+                idx = list(range(start, start + self.num_frames))
+        return idx
+
+    def _augment(self, img):
+        img = self.resize(img)
+        if self.train and random.random() < 0.5:
+            img = torch.flip(img, dims=[2])
+        return img
+
+    def __getitem__(self, idx):
+        path, class_id, class_name = self.samples[idx]
+        if path.endswith(".mp4"):
+            frames = self._read_video(path)
+        else:
+            frames = self._read_frames_folder(path)
+
+        assert len(frames) > 0, f"Empty video/frames at {path}"
+        sel = self._sample_indices(len(frames))
+        clip = []
+        for i in sel:
+            img = frames[i]
+            img = self.to_tensor(img)
+            img = self._augment(img)
+            img = self.normalize(img)
+            clip.append(img)
+        clip = torch.stack(clip, dim=1)
+        return clip, class_id, class_name, os.path.basename(path)
+
+
+def video_collate_fn(batch):
+    clips, class_ids, class_names, names = zip(*batch)
+    clips = torch.stack(clips, dim=0)
+    labels = torch.tensor(class_ids, dtype=torch.long)
+    return {
+        "inputs": clips,
+        "labels": labels,
+        "class_names": list(class_names),
+        "names": list(names),
+    }

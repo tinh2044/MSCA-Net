@@ -95,11 +95,16 @@ def save_attention_map(attention_map, save_path, title="Attention Map"):
 def process_attention_data(attention_data, sample_names, output_dir, data_name):
     batch_size = len(sample_names)
 
-    streams = ["body_attention_data", "left_attention_data", "right_attention_data"]
+    streams = [
+        "body_attention_data",
+        "left_attention_data",
+        "right_attention_data",
+        "fusion_attention_data",
+    ]
     attention_types = ["self_attn_maps", "causal_attn_maps", "cross_attn_maps"]
     for batch_idx in range(batch_size):
         sample_name = sample_names[batch_idx]
-        sample_dir = os.path.join(output_dir, data_name, sample_name)
+        sample_dir = os.path.join(output_dir, sample_name)
 
         print(f"Processing sample: {sample_name}")
 
@@ -111,19 +116,32 @@ def process_attention_data(attention_data, sample_names, output_dir, data_name):
             stream_data = attention_data[stream]
             stream_name = stream.replace("_attention_data", "")
 
-            for attn_type in attention_types:
-                if attn_type not in stream_data or stream_data[attn_type] is None:
-                    print(f"  Warning: {attn_type} not found in {stream}")
+            if stream == "fusion_attention_data":
+                if (
+                    "fusion_attn_maps" not in stream_data
+                    or stream_data["fusion_attn_maps"] is None
+                ):
+                    print(f"  Warning: fusion_attn_maps not found in {stream}")
                     continue
-
-                attn_map = stream_data[attn_type][batch_idx]
-
-                filename = f"{stream_name}_{attn_type}.png"
+                attn_map = stream_data["fusion_attn_maps"][batch_idx]
+                filename = f"{stream_name}_fusion_attn_maps.png"
                 save_path = os.path.join(sample_dir, filename)
-
                 save_attention_map(attn_map, save_path)
-
                 print(f"`Saved: {filename} (shape: {attn_map.shape})")
+            else:
+                for attn_type in attention_types:
+                    if attn_type not in stream_data or stream_data[attn_type] is None:
+                        print(f"  Warning: {attn_type} not found in {stream}")
+                        continue
+
+                    attn_map = stream_data[attn_type][batch_idx]
+
+                    filename = f"{stream_name}_{attn_type}.png"
+                    save_path = os.path.join(sample_dir, filename)
+
+                    save_attention_map(attn_map, save_path)
+
+                    print(f"`Saved: {filename} (shape: {attn_map.shape})")
 
 
 def main():

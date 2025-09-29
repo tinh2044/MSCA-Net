@@ -1,0 +1,21 @@
+data:
+  root: ./VSL-video
+
+model:
+  type: timesformer
+  num_classes: 10
+  pretrained: true
+  num_frames: 16
+  img_size: 224
+  attention_type: divided_space_time
+
+training:
+  model_dir: outputs_TimeSformer
+  optimization:
+    optimizer: adamw
+    learning_rate: 1e-4
+    weight_decay: 0.01
+    scheduler: cosine
+    warmup_epochs: 5
+
+
