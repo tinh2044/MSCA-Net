@@ -19,3 +19,4 @@ training:
     warmup_epochs: 5
 
 
+max_acc: 88.0

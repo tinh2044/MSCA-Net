@@ -4,6 +4,7 @@ import argparse
 import datetime
 import yaml
 from pathlib import Path
+import sys
 
 import torch
 from torch.utils.data import DataLoader
@@ -212,6 +213,9 @@ def main(args, cfg):
                 best_path,
             )
         print(f"ACC {acc:.4f} | BEST_ACC {best_acc:.4f}")
+
+        if acc > cfg["max_acc"]:
+            sys.exit(0)
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
