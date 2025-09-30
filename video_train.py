@@ -187,9 +187,9 @@ def main(args, cfg):
             },
             last_ckpt,
         )
-        prev = output_dir / f"checkpoint_{epoch - 1}.pth"
-        if os.path.exists(prev):
-            os.remove(prev)
+        # prev = output_dir / f"checkpoint_{epoch - 1}.pth"
+        # if os.path.exists(prev):
+        #     os.remove(prev)
 
         results = evaluate_fn(
             args,
@@ -212,10 +212,9 @@ def main(args, cfg):
                 },
                 best_path,
             )
-        print(f"ACC {acc:.4f} | BEST_ACC {best_acc:.4f}")
-
-        if acc > cfg["max_acc"]:
+        if "max_acc" in cfg and acc > cfg["max_acc"]:
             sys.exit(0)
+        print(f"ACC {acc:.4f} | BEST_ACC {best_acc:.4f}")
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))

@@ -52,9 +52,18 @@ class WrapperSlowfast(WrapperModel):
     def pack_inputs(self, x, alpha=4):
         assert x.ndim == 5 and x.shape[1] == 3, "Input must be (B, 3, T, H, W)"
         B, C, T, H, W = x.shape
+
+        # Fast pathway
         fast = x
-        idx = torch.linspace(0, T - 1, max(T // alpha, 1)).long().to(x.device)
-        slow = x.index_select(dim=2, index=idx)
+
+        # Slow pathway
+        slow_frames = max(T // alpha, 1)
+        if slow_frames == 1:
+            slow = x[:, :, T // 2 : T // 2 + 1, :, :]
+        else:
+            idx = torch.linspace(0, T - 1, slow_frames).long().to(x.device)
+            slow = x.index_select(dim=2, index=idx)
+
         return [fast, slow]
 
 

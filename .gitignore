@@ -23,12 +23,6 @@ docs/
 logs/
 *.pth
 *.pt
-*.ptl
-*.ptl.tar
-*.ptl.tar.gz
-*.ptl.tar.bz2
-*.ptl.tar.xz
-*.ptl.tar.lzma
 *.bkp
 *.drawio
 attention_maps/
@@ -36,3 +30,14 @@ attention_maps.json
 web/
 ./small_dataset/
 ./trajectory_plots/
+2251010089_NguyenChiTinh.zip
+báo cáo đồ án*
+*.mp4
+preprocesser/
+fusion/
+feature_plots/
+small_dataset/
+trajectory_plots/
+VSL-video/
+*.ipynb
+Source_Latex_PDF.zip
