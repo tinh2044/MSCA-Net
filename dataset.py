@@ -126,7 +126,7 @@ class SLR_Dataset(Dataset.Dataset):
         keypoints = self.select_frames(keypoints)
 
         if self.split == "train" and np.random.rand() < 0.5:
-            keypoints = self.apply_augmentation(keypoints)
+            keypoints = self.applyaugmentation(keypoints)
         if self.normalize:
             keypoints = self.normalize_keypoints(keypoints)
 
@@ -170,7 +170,7 @@ class SLR_Dataset(Dataset.Dataset):
 
         return keypoint
 
-    def apply_augmentation(self, keypoints):
+    def applyaugmentation(self, keypoints):
         aug = False
         while not aug:
             if np.random.uniform(0, 1) < 0.5:
@@ -367,16 +367,11 @@ class ISLRVideoDataset(Dataset.Dataset):
         samples = []
         for _cls in class_names:
             cls_dir = os.path.join(split_dir, _cls)
+            i = 0
             for p in glob.glob(os.path.join(cls_dir, "*.mp4")):
                 samples.append((p, self.class_to_id[_cls], _cls))
-            for folder in [
-                d
-                for d in os.listdir(cls_dir)
-                if os.path.isdir(os.path.join(cls_dir, d))
-            ]:
-                frame_dir = os.path.join(cls_dir, folder)
-                if len(glob.glob(os.path.join(frame_dir, "*.jpg"))) > 0:
-                    samples.append((frame_dir, self.class_to_id[_cls], _cls))
+                if i > 5:
+                    break
 
         assert len(samples) > 0, f"No videos folders found under {split_dir}"
         if shuffle:
@@ -397,7 +392,7 @@ class ISLRVideoDataset(Dataset.Dataset):
     def __len__(self):
         return len(self.samples)
 
-    def _read_video(self, path):
+    def read_video(self, path):
         cap = cv2.VideoCapture(path)
         frames = []
         while True:
@@ -409,12 +404,7 @@ class ISLRVideoDataset(Dataset.Dataset):
         cap.release()
         return frames
 
-    def _read_frames_folder(self, frame_dir):
-        frame_paths = sorted(glob.glob(os.path.join(frame_dir, "*.jpg")))
-        frames = [cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB) for p in frame_paths]
-        return frames
-
-    def _sample_indices(self, n):
+    def sample_indices(self, n):
         if n <= self.num_frames:
             idx = list(range(n)) + [n - 1] * (self.num_frames - n)
         else:
@@ -426,7 +416,7 @@ class ISLRVideoDataset(Dataset.Dataset):
                 idx = list(range(start, start + self.num_frames))
         return idx
 
-    def _augment(self, img):
+    def augment(self, img):
         img = self.resize(img)
         if self.train and random.random() < 0.5:
             img = torch.flip(img, dims=[2])
@@ -434,18 +424,15 @@ class ISLRVideoDataset(Dataset.Dataset):
 
     def __getitem__(self, idx):
         path, class_id, class_name = self.samples[idx]
-        if path.endswith(".mp4"):
-            frames = self._read_video(path)
-        else:
-            frames = self._read_frames_folder(path)
+        frames = self.read_video(path)
 
         assert len(frames) > 0, f"Empty video/frames at {path}"
-        sel = self._sample_indices(len(frames))
+        sel = self.sample_indices(len(frames))
         clip = []
         for i in sel:
             img = frames[i]
             img = self.to_tensor(img)
-            img = self._augment(img)
+            img = self.augment(img)
             img = self.normalize(img)
             clip.append(img)
         clip = torch.stack(clip, dim=1)
