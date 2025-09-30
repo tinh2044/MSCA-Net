@@ -370,6 +370,7 @@ class ISLRVideoDataset(Dataset.Dataset):
             i = 0
             for p in glob.glob(os.path.join(cls_dir, "*.mp4")):
                 samples.append((p, self.class_to_id[_cls], _cls))
+                i += 1
                 if i > 5:
                     break
 

@@ -50,52 +50,70 @@ class WrapperSlowfast(WrapperModel):
         return super().forward(inputs, labels)
 
     def pack_inputs(self, x, alpha=4):
+        """
+        Pack inputs for SlowFast model.
+
+        Args:
+            x: Input tensor of shape (B, C, T, H, W)
+            alpha: Temporal stride ratio between fast and slow pathways
+
+        Returns:
+            List of [fast_pathway, slow_pathway] tensors
+        """
         assert x.ndim == 5 and x.shape[1] == 3, "Input must be (B, 3, T, H, W)"
         B, C, T, H, W = x.shape
 
-        print(f"Input shape: {x.shape}")
-        print(f"Temporal dimension T: {T}")
+        # Calculate target temporal dimensions based on alpha
+        # For standard SlowFast: alpha=4, so if fast has 32 frames, slow has 8
+        target_fast_frames = 32
+        target_slow_frames = target_fast_frames // alpha
 
-        # SlowFast model expects specific temporal dimensions
-        # Standard SlowFast uses 32 frames for fast and 8 frames for slow
-        # We need to ensure the temporal dimensions are exactly what the model expects
-
-        # Fast pathway: 32 frames
-        if T >= 32:
-            # Sample 32 frames evenly
-            idx = torch.linspace(0, T - 1, 32).long().to(x.device)
-            fast = x.index_select(dim=2, index=idx)
+        # Fast pathway: sample target_fast_frames frames
+        if T >= target_fast_frames:
+            idx_fast = torch.linspace(0, T - 1, target_fast_frames).long().to(x.device)
+            fast = x.index_select(dim=2, index=idx_fast)
+        elif T > 1:
+            # Repeat to reach target frames
+            repeat_factor = (target_fast_frames + T - 1) // T
+            fast = x.repeat(1, 1, repeat_factor, 1, 1)[:, :, :target_fast_frames, :, :]
         else:
-            # Pad with last frame to reach 32 frames
-            last_frame = x[:, :, -1:, :, :]
-            padding_frames = 32 - T
-            padding = last_frame.repeat(1, 1, padding_frames, 1, 1)
-            fast = torch.cat([x, padding], dim=2)
+            # Single frame case
+            fast = x.repeat(1, 1, target_fast_frames, 1, 1)
 
-        # Slow pathway: 8 frames
-        if T >= 8:
-            # Sample 8 frames evenly
-            idx = torch.linspace(0, T - 1, 8).long().to(x.device)
-            slow = x.index_select(dim=2, index=idx)
+        # Slow pathway: sample target_slow_frames frames
+        if T >= target_slow_frames:
+            idx_slow = torch.linspace(0, T - 1, target_slow_frames).long().to(x.device)
+            slow = x.index_select(dim=2, index=idx_slow)
+        elif T > 1:
+            # Repeat to reach target frames
+            repeat_factor = (target_slow_frames + T - 1) // T
+            slow = x.repeat(1, 1, repeat_factor, 1, 1)[:, :, :target_slow_frames, :, :]
         else:
-            # Pad with last frame to reach 8 frames
-            last_frame = x[:, :, -1:, :, :]
-            padding_frames = 8 - T
-            padding = last_frame.repeat(1, 1, padding_frames, 1, 1)
-            slow = torch.cat([x, padding], dim=2)
+            # Single frame case
+            slow = x.repeat(1, 1, target_slow_frames, 1, 1)
 
-        print(f"Fast pathway shape: {fast.shape}")
-        print(f"Slow pathway shape: {slow.shape}")
-        print(f"Temporal ratio: {fast.shape[2] / slow.shape[2]}")
-
-        return [fast, slow]
+        # CRITICAL: Return in the correct order [slow, fast] for SlowFast model
+        # The SlowFast model expects the slow pathway first, then fast pathway
+        return [slow, fast]
 
 
 def build_slowfast(num_classes, pretrained=False, alpha=4):
+    """
+    Build SlowFast model with custom number of classes.
+
+    Args:
+        num_classes: Number of output classes
+        pretrained: Whether to use pretrained weights
+        alpha: Temporal stride ratio (default: 4)
+
+    Returns:
+        WrapperSlowfast model
+    """
     model = torch.hub.load(
         "facebookresearch/pytorchvideo", "slowfast_r50", pretrained=pretrained
     )
 
+    # Replace the classification head
     if (
         hasattr(model, "blocks")
         and len(model.blocks) >= 7
@@ -109,7 +127,7 @@ def build_slowfast(num_classes, pretrained=False, alpha=4):
             in_dim = last_block.proj.in_features
             last_block.proj = nn.Linear(in_dim, num_classes)
         else:
-            raise AttributeError("Can not replace classification head")
+            raise AttributeError("Cannot replace classification head")
 
     return WrapperSlowfast(model, num_classes, alpha)
 
@@ -131,15 +149,7 @@ class TimeSFormerWrapper(nn.Module):
             attention_type=attention_type,
             num_labels=num_classes,
         )
-        if pretrained:
-            self.model = TimesformerForVideoClassification.from_pretrained(
-                "facebook/timesformer-base-finetuned-k400"
-            )
-            self.model.classifier = nn.Linear(
-                self.model.classifier.in_features, num_classes
-            )
-        else:
-            self.model = TimesformerForVideoClassification(self.config)
+        self.model = TimesformerForVideoClassification(self.config)
 
         self.loss_fn = nn.CrossEntropyLoss()
 
