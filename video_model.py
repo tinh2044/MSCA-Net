@@ -18,7 +18,7 @@ class WrapperModel(nn.Module):
         }
 
 
-def build_i3d(num_classes, pretrained=True):
+def build_i3d(num_classes, pretrained=False):
     hub_model = torch.hub.load(
         "facebookresearch/pytorchvideo", "i3d_r50", pretrained=pretrained
     )
@@ -53,21 +53,45 @@ class WrapperSlowfast(WrapperModel):
         assert x.ndim == 5 and x.shape[1] == 3, "Input must be (B, 3, T, H, W)"
         B, C, T, H, W = x.shape
 
-        # Fast pathway
-        fast = x
+        print(f"Input shape: {x.shape}")
+        print(f"Temporal dimension T: {T}")
 
-        # Slow pathway
-        slow_frames = max(T // alpha, 1)
-        if slow_frames == 1:
-            slow = x[:, :, T // 2 : T // 2 + 1, :, :]
+        # SlowFast model expects specific temporal dimensions
+        # Standard SlowFast uses 32 frames for fast and 8 frames for slow
+        # We need to ensure the temporal dimensions are exactly what the model expects
+
+        # Fast pathway: 32 frames
+        if T >= 32:
+            # Sample 32 frames evenly
+            idx = torch.linspace(0, T - 1, 32).long().to(x.device)
+            fast = x.index_select(dim=2, index=idx)
         else:
-            idx = torch.linspace(0, T - 1, slow_frames).long().to(x.device)
+            # Pad with last frame to reach 32 frames
+            last_frame = x[:, :, -1:, :, :]
+            padding_frames = 32 - T
+            padding = last_frame.repeat(1, 1, padding_frames, 1, 1)
+            fast = torch.cat([x, padding], dim=2)
+
+        # Slow pathway: 8 frames
+        if T >= 8:
+            # Sample 8 frames evenly
+            idx = torch.linspace(0, T - 1, 8).long().to(x.device)
             slow = x.index_select(dim=2, index=idx)
+        else:
+            # Pad with last frame to reach 8 frames
+            last_frame = x[:, :, -1:, :, :]
+            padding_frames = 8 - T
+            padding = last_frame.repeat(1, 1, padding_frames, 1, 1)
+            slow = torch.cat([x, padding], dim=2)
+
+        print(f"Fast pathway shape: {fast.shape}")
+        print(f"Slow pathway shape: {slow.shape}")
+        print(f"Temporal ratio: {fast.shape[2] / slow.shape[2]}")
 
         return [fast, slow]
 
 
-def build_slowfast(num_classes, pretrained=True, alpha=4):
+def build_slowfast(num_classes, pretrained=False, alpha=4):
     model = torch.hub.load(
         "facebookresearch/pytorchvideo", "slowfast_r50", pretrained=pretrained
     )
@@ -94,7 +118,7 @@ class TimeSFormerWrapper(nn.Module):
     def __init__(
         self,
         num_classes,
-        pretrained=True,
+        pretrained=False,
         attention_type="divided_space_time",
         img_size=224,
         num_frames=16,
