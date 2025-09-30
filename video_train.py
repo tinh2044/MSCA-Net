@@ -27,7 +27,7 @@ def get_args_parser():
     parser.add_argument("--resume", default="", type=str)
     parser.add_argument("--start_epoch", default=0, type=int)
     parser.add_argument("--eval", action="store_true")
-    parser.add_argument("--num_workers", default=0, type=int)
+    parser.add_argument("--num-workers", default=0, type=int)
     parser.add_argument("--print_freq", default=10, type=int)
     return parser
 
@@ -187,9 +187,9 @@ def main(args, cfg):
             },
             last_ckpt,
         )
-        # prev = output_dir / f"checkpoint_{epoch - 1}.pth"
-        # if os.path.exists(prev):
-        #     os.remove(prev)
+        prev = output_dir / f"checkpoint_{epoch - 1}.pth"
+        if os.path.exists(prev):
+            os.remove(prev)
 
         results = evaluate_fn(
             args,
