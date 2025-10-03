@@ -371,7 +371,7 @@ class ISLRVideoDataset(Dataset.Dataset):
             for p in glob.glob(os.path.join(cls_dir, "*.mp4")):
                 samples.append((p, self.class_to_id[_cls], _cls))
                 i += 1
-                if i > 5:
+                if i > 3:
                     break
 
         assert len(samples) > 0, f"No videos folders found under {split_dir}"
