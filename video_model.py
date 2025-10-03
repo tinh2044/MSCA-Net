@@ -149,7 +149,12 @@ class TimeSFormerWrapper(nn.Module):
             attention_type=attention_type,
             num_labels=num_classes,
         )
-        self.model = TimesformerForVideoClassification(self.config)
+        if pretrained:
+            self.model = TimesformerForVideoClassification.from_pretrained(
+                "facebook/timesformer-base-finetuned-k400"
+            )
+        else:
+            self.model = TimesformerForVideoClassification(self.config)
 
         self.loss_fn = nn.CrossEntropyLoss()
 
