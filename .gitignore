@@ -21,7 +21,7 @@ comparison_dev_test/
 config.yaml
 docs/
 logs/
-*.pth
+# *.pth
 *.pt
 *.bkp
 *.drawio
