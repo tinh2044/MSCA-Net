@@ -34,7 +34,6 @@ def create_causal_attention_mask(attention_mask, input_shape, inputs_embeds):
             dtype=inputs_embeds.dtype,
         )
     )
-    # Convert causal_mask to additive mask: 0 for allowed, -inf for masked
     causal_additive = (1.0 - causal_mask) * torch.finfo(inputs_embeds.dtype).min
     expanded_mask = expanded_mask + causal_additive[None, None, :, :]
 

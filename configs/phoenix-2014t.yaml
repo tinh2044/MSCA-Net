@@ -98,7 +98,7 @@ model:
   residual_blocks: [128, 128, 256, 512]
   in_fusion_dim: 512
   out_fusion_dim: 1024
-
+  num_classes: 1119
   body_idx:
     - 11
     - 12
